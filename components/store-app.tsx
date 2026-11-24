@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { Activity, BarChart3, Bell, Check, ChevronRight, CircleDollarSign, ClipboardList, Download, LayoutDashboard, LogOut, Menu, Package, Plus, Printer, Search, Settings, ShieldCheck, ShoppingCart, Store, UserRound, Users, Wallet, X } from "lucide-react";
+import { Activity, BarChart3, Bell, ChevronRight, CircleDollarSign, ClipboardList, Download, LayoutDashboard, LogOut, Menu, Package, Plus, Printer, Search, ShieldCheck, ShoppingCart, Store, UserRound, Users, Wallet, X } from "lucide-react";
 
 type Page = "Dashboard" | "POS" | "Orders" | "Inventory" | "Customers" | "Employees" | "Expenses" | "Reports" | "Payroll" | "Permissions" | "Audit";
 type Role = "owner" | "admin" | "manager" | "cashier" | "hr" | "accountant" | "employee";
