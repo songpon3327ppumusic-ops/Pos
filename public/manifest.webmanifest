@@ -1,0 +1,11 @@
+{
+  "name": "StoreFlow POS",
+  "short_name": "StoreFlow",
+  "description": "ระบบจัดการร้านค้าและขายหน้าร้าน",
+  "start_url": "/Pos/",
+  "scope": "/Pos/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#059669",
+  "lang": "th"
+}
