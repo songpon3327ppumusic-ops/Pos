@@ -39,5 +39,6 @@ Migration `202611240002_live_operations.sql` adds:
 - `bootstrap_store_owner`: guarded first-owner setup.
 - `checkout_sale`: atomic POS checkout and stock deduction, restricted to authenticated store members with sales permissions.
 - `adjust_stock`: role-checked stock adjustments with movement and audit records.
+- Migration `202611240003_fix_organization_read_policy.sql`: restricts organization records to active members using the correct organization ID.
 
 All three functions validate the authenticated user and explicitly revoke execution from public/anonymous roles. Keep all service-role/secret keys server-side.
