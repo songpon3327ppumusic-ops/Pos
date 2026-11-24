@@ -1,41 +1,43 @@
 # StoreFlow — All-in-One Store Management System
 
-Next.js 14 App Router · React · TypeScript · Tailwind · Supabase Auth / Postgres · Recharts.
+Next.js 14 App Router · React · TypeScript · Tailwind · Supabase Auth / Postgres.
 
-## Supabase project
-- Project: StoreFlow
-- Region: Southeast Asia (Singapore)
+## Backend
+- Supabase project: StoreFlow
 - Project ref: `tjunaxajcxwxirneopar`
-- Database migration `storeflow_core` has been applied.
-- Tenant organization `StoreFlow` has been created (slug: `storeflow`).
+- Region: Southeast Asia (Singapore)
+- Existing multi-tenant schema: organizations, memberships, products, sales, stock, customers, employees, expenses, payroll and audit logs.
+- Browser uses only the Supabase publishable key. Never expose a secret/service-role key in frontend code.
 
 ## Local setup
-1. Copy `.env.example` to `.env.local` (the file contains the public project URL and publishable key).
-2. Create the first Auth user in Supabase Authentication, or sign up through the app once deployed.
-3. Add the first owner membership using the Auth user's UUID:
+1. Copy `.env.example` to `.env.local`.
+2. Install dependencies: `npm install`.
+3. Run: `npm run dev`.
+4. Open `/Pos/login/`, create the first owner account, and verify the email if Supabase email confirmation is enabled.
 
-```sql
-insert into public.organization_members (organization_id, user_id, role)
-values ('68365882-e031-4e6a-8200-065967d3101d', 'YOUR_AUTH_USER_UUID', 'owner')
-on conflict (organization_id, user_id) do update set role = 'owner', is_active = true;
-```
+The first authenticated account is assigned the owner role for the existing `storeflow` organization through the guarded `bootstrap_store_owner` database function. Once the organization has an owner, later signups cannot claim ownership.
 
-4. Install and run:
-```bash
-npm install
-npm run dev
-```
+## Live modules in this implementation
+- Supabase Auth sign-up and sign-in.
+- Organization membership and role-based navigation.
+- Products: create, update, list and search.
+- Stock adjustment with stock movement and audit records.
+- POS: server-side price lookup, stock validation, atomic sale + sale item writes, stock deduction, receipt number and audit record.
+- Sales history and CSV export.
+- Customers, employees and expenses: create and list.
+- Dashboard and sales summaries derived from database rows only.
+- Empty states are shown when no real data exists; no demo rows or fabricated KPI values are loaded.
 
-## Supabase security
-- SSR cookie-based auth via `@supabase/ssr`; unauthenticated routes are redirected to `/login`.
-- RLS enabled for every table in the public schema created by the migration.
-- Tenant row isolation by active organization membership.
-- Role-limited database writes: owner/admin/manager may insert/update; owner/admin may delete.
-- The `role_permissions` matrix is currently schema-only; fine-grained module permissions and approval rules still need server/API enforcement.
-- Never expose a service-role key in browser code or `NEXT_PUBLIC_*` variables.
+## Not yet implemented
+- Payment gateway collection / PromptPay verification (the POS currently records the selected payment method only).
+- Employee invitations and multi-user onboarding after the first owner.
+- Payroll processing, detailed permissions matrix, leave/attendance workflows, supplier purchasing and advanced reporting.
+- End-to-end browser tests and production launch review.
 
-## Included demo screens
-Dashboard, POS cart and checkout (mock), order history, inventory, employees and leave requests, payroll overview, CRM/loyalty, expenses, reports/CSV, role permission matrix and audit log.
+## Database functions
+Migration `202611240002_live_operations.sql` adds:
+- `bootstrap_store_owner`: guarded first-owner setup.
+- `checkout_sale`: atomic POS checkout and stock deduction, restricted to authenticated store members with sales permissions.
+- `adjust_stock`: role-checked stock adjustments with movement and audit records.
 
-## Important implementation boundary
-Login/session protection is wired to Supabase once environment variables are configured. The existing operational screens still use in-memory Mock Data; they are not yet reading/writing the Postgres tables. Payroll calculations, payment processing, stock deduction transactions, permission-aware API enforcement, production audit triggers, and end-to-end tests need further implementation.
+All three functions validate the authenticated user and explicitly revoke execution from public/anonymous roles. Keep all service-role/secret keys server-side.
