@@ -218,7 +218,7 @@ export default function StoreApp(){
   try{
    const {data:saleId,error}=await supabase.rpc("checkout_sale",{p_organization_id:orgId,p_items:cartItems.map(p=>({product_id:p.id,quantity:p.qty})),p_payment_method:payment,p_discount:discountValue,p_tax:taxValue,p_customer_id:selectedCustomer||null});
    if(error)throw error;
-   const {data:sale,error:saleError}=await supabase.from("sales").select("*").eq("id",saleId).single();if(saleError)throw saleError;
+   const {data:sale,error:saleError}=await supabase.from("sales").select("*").eq("id",saleId).eq("organization_id",orgId).single();if(saleError)throw saleError;
    await reload();setCart([]);setDiscount("0");setVat(false);setSelectedCustomer("");setRecord(sale);setModal("receipt");notify("บันทึกการขายและตัดสต็อกเรียบร้อย");
   }catch(e){notify(e instanceof Error?e.message:"ทำรายการขายไม่สำเร็จ");}
   finally{setBusy(false);}
