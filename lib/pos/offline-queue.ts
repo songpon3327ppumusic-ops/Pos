@@ -6,6 +6,7 @@ export type OfflineOrder = {
   discount: number;
   tax: number;
   customerId: string | null;
+  cashReceived: number | null;
   createdAt: string;
 };
 
