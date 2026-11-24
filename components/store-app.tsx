@@ -1,9 +1,9 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { Activity, BarChart3, Bell, ChevronRight, CircleDollarSign, ClipboardList, Download, LayoutDashboard, LogOut, Menu, Package, Plus, Printer, Search, ShieldCheck, ShoppingCart, Store, UserRound, Users, Wallet, X } from "lucide-react";
+import { Activity, BarChart3, Bell, ChevronRight, CircleDollarSign, ClipboardList, Download, LayoutDashboard, LogOut, Menu, Package, Plus, Printer, Search, ShieldCheck, ShoppingCart, Store, UserRound, Users, Wallet, X, Settings, KeyRound, Mail } from "lucide-react";
 
-type Page = "Dashboard" | "POS" | "Orders" | "Inventory" | "Customers" | "Employees" | "Expenses" | "Reports" | "Payroll" | "Permissions" | "Audit";
+type Page = "Dashboard" | "POS" | "Orders" | "Inventory" | "Customers" | "Employees" | "Expenses" | "Reports" | "Payroll" | "Permissions" | "Audit" | "Account";
 type Role = "owner" | "admin" | "manager" | "cashier" | "hr" | "accountant" | "employee";
 type Product = { id:string; sku:string; name:string; category:string|null; cost:number; price:number; stock:number; min_stock:number; is_active:boolean };
 type Customer = { id:string; full_name:string; phone:string|null; email:string|null; tier:string; points:number; credit_limit:number };
@@ -24,7 +24,8 @@ const nav:{id:Page;label:string;icon:any;group:string;roles:Role[]}[]=[
  {id:"Reports",label:"รายงาน",icon:BarChart3,group:"การเงิน",roles:["owner","admin","manager","accountant"]},
  {id:"Payroll",label:"เงินเดือน",icon:Wallet,group:"บุคลากร",roles:["owner","admin","manager","hr","accountant"]},
  {id:"Permissions",label:"สิทธิ์การใช้งาน",icon:ShieldCheck,group:"ตั้งค่า",roles:["owner","admin"]},
- {id:"Audit",label:"ประวัติการใช้งาน",icon:Activity,group:"ตั้งค่า",roles:["owner","admin","manager"]}
+ {id:"Audit",label:"ประวัติการใช้งาน",icon:Activity,group:"ตั้งค่า",roles:["owner","admin","manager"]},
+ {id:"Account",label:"ตั้งค่าบัญชี",icon:Settings,group:"ตั้งค่า",roles:["owner","admin","manager","cashier","hr","accountant","employee"]}
 ];
 const roleNames:Record<Role,string>={owner:"เจ้าของร้าน",admin:"ผู้ดูแล",manager:"ผู้จัดการ",cashier:"แคชเชียร์",hr:"ฝ่ายบุคคล",accountant:"บัญชี",employee:"พนักงาน"};
 function Card({children,className=""}:{children:React.ReactNode;className?:string}){return <section className={"rounded-2xl border border-slate-100 bg-white p-5 shadow-soft "+className}>{children}</section>}
@@ -32,6 +33,7 @@ function Empty({text}:{text:string}){return <div className="rounded-xl border bo
 export default function StoreApp(){
  const supabase=useMemo(()=>createClient(),[]);
  const [loading,setLoading]=useState(true),[loadError,setLoadError]=useState(""),[orgId,setOrgId]=useState(""),[orgName,setOrgName]=useState("StoreFlow"),[userEmail,setUserEmail]=useState(""),[role,setRole]=useState<Role>("employee");
+ const [accountName,setAccountName]=useState(""),[newPassword,setNewPassword]=useState(""),[confirmPassword,setConfirmPassword]=useState("");
  const [products,setProducts]=useState<Product[]>([]),[customers,setCustomers]=useState<Customer[]>([]),[employees,setEmployees]=useState<Employee[]>([]),[sales,setSales]=useState<Sale[]>([]),[saleItems,setSaleItems]=useState<SaleItem[]>([]),[expenses,setExpenses]=useState<Expense[]>([]),[audit,setAudit]=useState<any[]>([]);
  const [page,setPage]=useState<Page>("Dashboard"),[mobile,setMobile]=useState(false),[query,setQuery]=useState(""),[toast,setToast]=useState(""),[busy,setBusy]=useState(false);
  const [modal,setModal]=useState<"product"|"customer"|"employee"|"expense"|"stock"|"receipt"|null>(null),[record,setRecord]=useState<any>(null);
@@ -70,7 +72,7 @@ export default function StoreApp(){
     if(error)throw error;
     if(!session){window.location.replace("/Pos/login/");return;}
     if(!active)return;
-    setUserEmail(session.user.email||"");
+    setUserEmail(session.user.email||"");setAccountName(String(session.user.user_metadata?.full_name||""));
     let {data:membership,error:memberError}=await supabase.from("organization_members").select("organization_id,role").eq("user_id",session.user.id).eq("is_active",true).limit(1).maybeSingle();
     if(memberError)throw memberError;
     if(!membership){
@@ -95,6 +97,8 @@ export default function StoreApp(){
   return ()=>{active=false;subscription.unsubscribe();};
  },[supabase]);
  const logout=async()=>{await supabase.auth.signOut();window.location.replace("/Pos/login/");};
+ const saveAccountName=async()=>{const value=accountName.trim();if(!value){notify("กรุณากรอกชื่อที่แสดง");return;}setBusy(true);try{const {error}=await supabase.auth.updateUser({data:{full_name:value}});if(error)throw error;notify("บันทึกชื่อบัญชีแล้ว");}catch(e){notify(e instanceof Error?e.message:"บันทึกบัญชีไม่สำเร็จ");}finally{setBusy(false);}};
+ const saveAccountPassword=async()=>{if(newPassword.length<8){notify("รหัสผ่านใหม่ต้องมีอย่างน้อย 8 ตัวอักษร");return;}if(newPassword!==confirmPassword){notify("รหัสผ่านทั้งสองช่องไม่ตรงกัน");return;}setBusy(true);try{const {error}=await supabase.auth.updateUser({password:newPassword});if(error)throw error;setNewPassword("");setConfirmPassword("");notify("เปลี่ยนรหัสผ่านเรียบร้อย");}catch(e){notify(e instanceof Error?e.message:"เปลี่ยนรหัสผ่านไม่สำเร็จ");}finally{setBusy(false);}};
  const visible=nav.filter(n=>n.roles.includes(role));
  const navigate=(p:Page)=>{setPage(p);setQuery("");setMobile(false)};
  const cartItems=cart.map(c=>{const p=products.find(x=>x.id===c.id);return p?{...p,qty:c.qty}:null}).filter(Boolean) as (Product&{qty:number})[];
@@ -155,7 +159,7 @@ export default function StoreApp(){
  const monthExpense=expenses.filter(e=>e.expense_date.slice(0,7)===monthKey&&e.payment_status==="paid").reduce((v,e)=>v+e.amount,0);
  const salesByDay=Array.from({length:7},(_,i)=>{const d=new Date();d.setDate(d.getDate()-(6-i));const key=d.toISOString().slice(0,10);return {label:d.toLocaleDateString("th-TH",{weekday:"short"}),amount:sales.filter(s=>s.created_at.slice(0,10)===key&&s.status==="completed").reduce((v,s)=>v+s.total,0)};});
  const customerName=(id:string|null)=>customers.find(c=>c.id===id)?.full_name||"ลูกค้าทั่วไป";
- const pageTitle:Record<Page,string>={Dashboard:"ภาพรวมร้านค้า",POS:"ขายหน้าร้าน (POS)",Orders:"รายการขาย",Inventory:"สินค้าและสต็อก",Customers:"ลูกค้า",Employees:"พนักงาน",Expenses:"ค่าใช้จ่าย",Reports:"รายงาน",Payroll:"เงินเดือน",Permissions:"สิทธิ์การใช้งาน",Audit:"ประวัติการใช้งาน"};
+ const pageTitle:Record<Page,string>={Dashboard:"ภาพรวมร้านค้า",POS:"ขายหน้าร้าน (POS)",Orders:"รายการขาย",Inventory:"สินค้าและสต็อก",Customers:"ลูกค้า",Employees:"พนักงาน",Expenses:"ค่าใช้จ่าย",Reports:"รายงาน",Payroll:"เงินเดือน",Permissions:"สิทธิ์การใช้งาน",Audit:"ประวัติการใช้งาน",Account:"ตั้งค่าบัญชี"};
  const title=(sub:string,action?:React.ReactNode)=><div className="mb-5 flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-xl font-bold">{pageTitle[page]}</h2><p className="mt-1 text-sm text-slate-500">{sub}</p></div>{action}</div>;
  const table=(heads:string[],rows:React.ReactNode[][])=><div className="overflow-x-auto rounded-xl border border-slate-100"><table className="w-full min-w-[650px] text-left"><thead className="bg-slate-50"><tr>{heads.map(h=><th key={h} className="px-4 py-3 text-xs font-semibold text-slate-400">{h}</th>)}</tr></thead><tbody className="divide-y divide-slate-100">{rows.map((row,i)=><tr key={i} className="hover:bg-slate-50/70">{row.map((cell,j)=><td key={j} className="px-4 py-3 text-sm text-slate-600">{cell}</td>)}</tr>)}</tbody></table></div>;
  const searchBox=<div className="relative mb-4"><Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/><input className={field+" pl-9"} placeholder="ค้นหาข้อมูล..." value={query} onChange={e=>setQuery(e.target.value)}/></div>;
@@ -177,6 +181,20 @@ export default function StoreApp(){
   if(page==="Expenses")return <>{title("ค่าใช้จ่ายที่บันทึกจริง",<button onClick={()=>openModal("expense")} className={btn}><Plus size={16}/>บันทึกค่าใช้จ่าย</button>)}{searchBox}{expenses.length?table(["รายการ","หมวดหมู่","วันที่","จำนวนเงิน","สถานะ"],expenses.filter(e=>(e.title+" "+e.category).toLowerCase().includes(query.toLowerCase())).map(e=>[<b>{e.title}</b>,e.category,e.expense_date,money(e.amount),e.payment_status])):<Empty text="ยังไม่มีค่าใช้จ่าย"/>}</>;
   if(page==="Reports")return <><div className="grid gap-4 sm:grid-cols-3"><Card><p className="text-sm text-slate-500">ยอดขายเดือนนี้</p><b className="mt-2 block text-2xl">{money(monthSales.reduce((v,s)=>v+s.total,0))}</b></Card><Card><p className="text-sm text-slate-500">ต้นทุนขายเดือนนี้</p><b className="mt-2 block text-2xl">{money(monthSales.reduce((v,s)=>v+s.subtotal,0)-grossProfit)}</b></Card><Card><p className="text-sm text-slate-500">ค่าใช้จ่ายเดือนนี้</p><b className="mt-2 block text-2xl">{money(monthExpense)}</b></Card></div><Card className="mt-5"><h3 className="mb-3 font-bold">สรุปรายการขายตามวันที่</h3>{table(["วันที่","จำนวนบิล","ยอดขาย"],salesByDay.map(d=>[d.label,sales.filter(s=>new Date(s.created_at).toLocaleDateString("th-TH",{weekday:"short"})===d.label).length,money(d.amount)]))}</Card></>;
   if(page==="Audit")return <>{title("กิจกรรมที่บันทึกในระบบ")}{audit.length?table(["กิจกรรม","ประเภท","รหัสรายการ","เวลา"],audit.map(a=>[a.action,a.entity_type,a.entity_id||"-",dateText(a.created_at)])):<Empty text="ยังไม่มีประวัติการใช้งาน"/>}</>;
+  if(page==="Account")return <div className="max-w-3xl space-y-5">
+   {title("จัดการข้อมูลส่วนตัวและความปลอดภัยของบัญชี")}
+   <Card><div className="mb-4 flex items-center gap-3"><div className="rounded-xl bg-emerald-50 p-3 text-emerald-700"><UserRound/></div><div><h3 className="font-bold">ข้อมูลบัญชี</h3><p className="text-xs text-slate-400">ข้อมูลโปรไฟล์ที่ใช้แสดงใน StoreFlow</p></div></div>
+    <label className="mb-3 block text-sm font-medium">ชื่อที่แสดง<input className={field+" mt-1"} value={accountName} onChange={e=>setAccountName(e.target.value)} placeholder="ชื่อของคุณ"/></label>
+    <label className="mb-4 block text-sm font-medium">อีเมลบัญชี<div className="relative mt-1"><Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/><input className={field+" bg-slate-50 pl-9 text-slate-500"} value={userEmail} readOnly/></div><p className="mt-1 text-xs text-slate-400">อีเมลนี้ใช้เข้าสู่ระบบ ไม่สามารถแก้ไขจากหน้านี้ได้</p></label>
+    <button disabled={busy} onClick={saveAccountName} className={btn}>บันทึกข้อมูลบัญชี</button>
+   </Card>
+   <Card><div className="mb-4 flex items-center gap-3"><div className="rounded-xl bg-amber-50 p-3 text-amber-700"><KeyRound/></div><div><h3 className="font-bold">เปลี่ยนรหัสผ่าน</h3><p className="text-xs text-slate-400">ตั้งรหัสผ่านใหม่อย่างน้อย 8 ตัวอักษร</p></div></div>
+    <label className="mb-3 block text-sm font-medium">รหัสผ่านใหม่<input type="password" autoComplete="new-password" className={field+" mt-1"} value={newPassword} onChange={e=>setNewPassword(e.target.value)} placeholder="อย่างน้อย 8 ตัวอักษร"/></label>
+    <label className="mb-4 block text-sm font-medium">ยืนยันรหัสผ่านใหม่<input type="password" autoComplete="new-password" className={field+" mt-1"} value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)} placeholder="กรอกรหัสผ่านอีกครั้ง"/></label>
+    <button disabled={busy||!newPassword||!confirmPassword} onClick={saveAccountPassword} className={btn}>เปลี่ยนรหัสผ่าน</button>
+   </Card>
+   <Card><h3 className="font-bold">ข้อมูลการเข้าใช้งาน</h3><div className="mt-3 flex justify-between border-b py-3 text-sm"><span className="text-slate-500">ร้านค้า</span><b>{orgName}</b></div><div className="flex justify-between border-b py-3 text-sm"><span className="text-slate-500">บทบาท</span><b>{roleNames[role]}</b></div><button onClick={logout} className="mt-4 inline-flex items-center gap-2 rounded-xl border border-rose-200 px-4 py-2.5 text-sm font-semibold text-rose-600 hover:bg-rose-50"><LogOut size={16}/>ออกจากระบบ</button></Card>
+  </div>;
   const unavailable:Record<string,string>={Payroll:"โมดูลเงินเดือนยังไม่เปิดใช้งานในฐานข้อมูลชุดนี้ จึงไม่แสดงตัวเลขจำลอง",Permissions:"การจัดการสิทธิ์รายโมดูลยังอยู่ระหว่างพัฒนา ขณะนี้ระบบใช้สิทธิ์ตามบทบาทที่กำหนดในฐานข้อมูล"};
   return <Card><h3 className="font-bold">{pageTitle[page]}</h3><p className="mt-2 text-sm text-slate-500">{unavailable[page]||"โมดูลนี้ยังไม่เปิดใช้งาน"}</p></Card>;
  };
