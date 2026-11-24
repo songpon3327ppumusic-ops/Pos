@@ -43,6 +43,8 @@ Deno.serve(async (req) => {
     });
     const session = await stripeResponse.json();
     if (!stripeResponse.ok) return json({ error: "Stripe could not verify this checkout session" }, 502);
+    const configuredLiveMode = stripeKey.startsWith("sk_live_");
+    if (Boolean(session.livemode) !== configuredLiveMode) return json({ verified: false, status: "mode_mismatch" }, 403);
 
     if (session.client_reference_id !== organization_id || session.metadata?.organization_id !== organization_id) {
       return json({ verified: false, status: "mismatch" }, 403);
