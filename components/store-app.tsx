@@ -72,7 +72,7 @@ export default function StoreApp(){
   if(costResult.error)throw costResult.error;
   const costMap=new Map((costResult.data||[]).map((r:any)=>[r.product_id,Number(r.cost)||0]));
   const catalog=((results[0].data||[]) as any[]).map(p=>({...p,cost:costMap.get(p.id)||0})) as Product[];
-  setProducts(catalog); void saveProductCatalog(id,catalog).catch(()=>{});
+  setProducts(catalog); void saveProductCatalog(id,catalog.map(p=>({...p,cost:0}))).catch(()=>{});
   if(role==="owner"){const {data:pending}=await supabase.rpc("list_pending_store_members");setPendingStaff(pending||[]);}
   setCustomers((results[1].data||[]) as Customer[]);
   setEmployees((results[2].data||[]) as Employee[]);
