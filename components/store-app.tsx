@@ -107,6 +107,7 @@ export default function StoreApp(){
     if(org?.name)setOrgName(org.name);if(membership.role==="owner"){const {data:code}=await supabase.rpc("get_store_invite_code");if(code)setInviteCode(String(code));}
     localStorage.setItem("storeflow:session",JSON.stringify({userId:session.user.id,orgId:membership.organization_id,orgName:org?.name||"StoreFlow",role:membership.role}));
     await reload(membership.organization_id);
+    if(membership.role==="owner"){const {data:pending}=await supabase.rpc("list_pending_store_members");setPendingStaff(pending||[]);}
    }catch(e){if(active)setLoadError(e instanceof Error?e.message:"ไม่สามารถโหลดข้อมูลร้านค้าได้");}
    finally{if(active)setLoading(false);}
   })();
