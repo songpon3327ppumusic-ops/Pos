@@ -19,7 +19,7 @@ const nav:{id:Page;label:string;icon:any;group:string;roles:Role[]}[]=[
  {id:"Orders",label:"รายการขาย",icon:ClipboardList,group:"การขาย",roles:["owner","admin","manager","cashier"]},
  {id:"Inventory",label:"สินค้าและสต็อก",icon:Package,group:"จัดการร้าน",roles:["owner","admin","manager"]},
  {id:"Customers",label:"ลูกค้า",icon:Users,group:"จัดการร้าน",roles:["owner","admin","manager"]},
- {id:"Employees",label:"พนักงาน",icon:UserRound,group:"บุคลากร",roles:["owner","admin","manager"]},
+ {id:"Employees",label:"พนักงาน",icon:UserRound,group:"บุคลากร",roles:["owner","admin","manager","hr"]},
  {id:"Expenses",label:"ค่าใช้จ่าย",icon:CircleDollarSign,group:"การเงิน",roles:["owner","admin","manager"]},
  {id:"Reports",label:"รายงาน",icon:BarChart3,group:"การเงิน",roles:["owner","admin","manager","accountant"]},
  {id:"Payroll",label:"เงินเดือน",icon:Wallet,group:"บุคลากร",roles:["owner","admin","manager","hr","accountant"]},
@@ -117,6 +117,14 @@ export default function StoreApp(){
    await reload();setSelectedPeriod(period.id);notify("สร้างรอบเงินเดือนและรายการพนักงานแล้ว");
   }catch(e){notify(e instanceof Error?e.message:"สร้างรอบเงินเดือนไม่สำเร็จ");}finally{setBusy(false);}
  };
+ const updatePayrollItem=async(item:any,fieldName:string,value:number)=>{
+  if(!Number.isFinite(value)||value<0){notify("กรุณากรอกจำนวนเงินตั้งแต่ 0 ขึ้นไป");return;}
+  const next={...item,[fieldName]:value};
+  const net=Number(next.base_pay||0)+Number(next.allowances||0)+Number(next.overtime_pay||0)+Number(next.commission||0)+Number(next.bonus||0)-Number(next.deductions||0)-Number(next.tax||0)-Number(next.social_security||0);
+  setBusy(true);
+  try{const {error}=await supabase.from("payroll_items").update({[fieldName]:value,net_pay:Math.max(0,net)}).eq("id",item.id).eq("organization_id",orgId);if(error)throw error;await reload();notify("อัปเดตรายการเงินเดือนแล้ว");}
+  catch(e){notify(e instanceof Error?e.message:"บันทึกรายการเงินเดือนไม่สำเร็จ");}finally{setBusy(false);}
+ };
  const updatePayrollStatus=async(period:any,status:"approved"|"paid")=>{
   setBusy(true);
   try{
@@ -143,8 +151,14 @@ export default function StoreApp(){
   if(role==="owner"||role==="admin")return true;
   const row=permissions.find(p=>p.role===role&&p.module===module.toLowerCase()&&p.action===action);
   if(row)return row.allowed===true;
-  const defaults:Record<string,string[]>={manager:["dashboard","pos","orders","inventory","customers","employees","expenses","reports","audit"],cashier:["dashboard","pos","orders"],hr:["dashboard","employees","payroll","attendance","leave"],accountant:["dashboard","reports","expenses","payroll","orders"],employee:["dashboard","attendance","leave"]};
-  return (defaults[role]||[]).includes(module.toLowerCase());
+  const defaults:Record<string,{modules:string[];actions:string[]}>={
+   manager:{modules:["dashboard","pos","orders","inventory","customers","employees","expenses","reports","audit"],actions:["read","create","update"]},
+   cashier:{modules:["dashboard","pos","orders"],actions:["read","create"]},
+   hr:{modules:["dashboard","employees","payroll","attendance","leave"],actions:["read","create","update"]},
+   accountant:{modules:["dashboard","reports","expenses","payroll","orders"],actions:["read","create","update","approve"]},
+   employee:{modules:["dashboard","attendance","leave"],actions:["read","create"]}
+  };
+  return (defaults[role]?.modules||[]).includes(module.toLowerCase())&&(defaults[role]?.actions||[]).includes(action);
  };
  const visible=nav.filter(n=>n.roles.includes(role)&&canAccess(n.id));
  const navigate=(p:Page)=>{if(p!=="Account"&&!canAccess(p)){notify("คุณไม่มีสิทธิ์เข้าถึงเมนูนี้");return;}setPage(p);setQuery("");setMobile(false)};
@@ -233,7 +247,7 @@ export default function StoreApp(){
    <Card><div className="mb-3 flex flex-wrap items-center justify-between gap-3"><h3 className="font-bold">รอบเงินเดือน</h3><select className={field+" max-w-xs"} value={selectedPeriod} onChange={e=>setSelectedPeriod(e.target.value)}><option value="">เลือกรอบเงินเดือน</option>{payrollPeriods.map(p=><option key={p.id} value={p.id}>{p.period_start} ถึง {p.period_end} · {p.status}</option>)}</select></div>
     {payrollPeriods.length?table(["รอบ","วันจ่าย","พนักงาน","ยอดสุทธิ","สถานะ","ดำเนินการ"],payrollPeriods.map(p=>{const items=payrollItems.filter(i=>i.payroll_period_id===p.id);const total=items.reduce((sum,i)=>sum+Number(i.net_pay??0),0);return [p.period_start+" – "+p.period_end,p.pay_date||"-",items.length+" คน",money(total),p.status==="draft"?"ฉบับร่าง":p.status==="approved"?"อนุมัติแล้ว":"จ่ายแล้ว",<div className="flex flex-wrap gap-2">{p.status==="draft"&&canAccess("payroll","approve")&&<button disabled={busy} onClick={()=>updatePayrollStatus(p,"approved")} className="rounded-lg border px-3 py-1.5 text-xs">อนุมัติ</button>}{p.status==="approved"&&canAccess("payroll","approve")&&<button disabled={busy} onClick={()=>updatePayrollStatus(p,"paid")} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs text-white">บันทึกจ่ายแล้ว</button>}</div>]})):<Empty text="ยังไม่มีรอบเงินเดือน"/>}
    </Card>
-   {selectedPeriod&&<Card><h3 className="mb-3 font-bold">รายละเอียดเงินเดือน</h3>{table(["พนักงาน","เงินเดือนพื้นฐาน","เบี้ยเลี้ยง","OT","โบนัส","รายการหัก","ภาษี","ประกันสังคม","สุทธิ"],payrollItems.filter(i=>i.payroll_period_id===selectedPeriod).map(i=>{const emp=employees.find(e=>e.id===i.employee_id);return [emp?.full_name||"พนักงาน",money(Number(i.base_pay)),money(Number(i.allowances)),money(Number(i.overtime_pay)),money(Number(i.bonus)),money(Number(i.deductions)),money(Number(i.tax)),money(Number(i.social_security)),<b>{money(Number(i.net_pay||0))}</b>]}))}</Card>}
+   {selectedPeriod&&<Card><h3 className="mb-3 font-bold">รายละเอียดเงินเดือน</h3>{table(["พนักงาน","เงินเดือนพื้นฐาน","เบี้ยเลี้ยง","OT","คอมมิชชัน","โบนัส","รายการหัก","ภาษี","ประกันสังคม","สุทธิ"],payrollItems.filter(i=>i.payroll_period_id===selectedPeriod).map(i=>{const emp=employees.find(e=>e.id===i.employee_id);const edit=(key:string)=><input type="number" min="0" step="0.01" disabled={busy||!canAccess("payroll","update")} defaultValue={Number(i[key]||0)} onBlur={e=>{const v=Number(e.target.value);if(v!==Number(i[key]||0))updatePayrollItem(i,key,v);}} className="w-24 rounded-lg border border-slate-200 px-2 py-1 text-right text-xs"/>;return [emp?.full_name||"พนักงาน",edit("base_pay"),edit("allowances"),edit("overtime_pay"),edit("commission"),edit("bonus"),edit("deductions"),edit("tax"),edit("social_security"),<b>{money(Number(i.net_pay||0))}</b>]}))}</Card>}
   </div>;
   if(page==="Permissions")return <div className="space-y-5">
    {title("กำหนดสิทธิ์การเข้าถึงแยกตามบทบาทและโมดูล")}
