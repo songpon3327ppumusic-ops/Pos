@@ -51,6 +51,7 @@ declare
 begin
   if v_user is null then raise exception 'Authentication required'; end if;
   if jsonb_typeof(p_items) <> 'array' or jsonb_array_length(p_items) = 0 then raise exception 'Cart is empty'; end if;
+  if exists (select 1 from (select value->>'product_id' as product_id from jsonb_array_elements(p_items) group by value->>'product_id' having count(*) > 1) d) then raise exception 'Duplicate products in cart'; end if;
   if coalesce(p_discount, 0) < 0 or coalesce(p_tax, 0) < 0 then raise exception 'Discount and tax must not be negative'; end if;
   select role into v_role from public.organization_members
   where organization_id = p_organization_id and user_id = v_user and is_active;
