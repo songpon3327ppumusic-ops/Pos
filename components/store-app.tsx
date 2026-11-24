@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { enqueueOfflineOrder, listOfflineOrders, removeOfflineOrder, saveProductCatalog } from "@/lib/pos/offline-queue";
+import { enqueueOfflineOrder, listOfflineOrders, removeOfflineOrder, saveProductCatalog, readProductCatalog } from "@/lib/pos/offline-queue";
 import { Activity, BarChart3, Bell, ChevronRight, CircleDollarSign, ClipboardList, Download, LayoutDashboard, LogOut, Menu, Package, Plus, Printer, Search, ShieldCheck, ShoppingCart, Store, UserRound, Users, Wallet, X, Settings, KeyRound, Mail, CreditCard } from "lucide-react";
 
 type Page = "Dashboard" | "POS" | "Orders" | "Inventory" | "Customers" | "Employees" | "Expenses" | "Reports" | "Payroll" | "Permissions" | "Audit" | "Account" | "Billing";
@@ -90,6 +90,7 @@ export default function StoreApp(){
     if(!session){window.location.replace("/Pos/login/");return;}
     if(!active)return;
     setUserEmail(session.user.email||"");setAccountName(String(session.user.user_metadata?.full_name||""));
+    if(!navigator.onLine){const cached=JSON.parse(localStorage.getItem("storeflow:session")||"null");if(cached?.userId===session.user.id&&cached?.orgId){setOrgId(cached.orgId);setOrgName(cached.orgName||"StoreFlow");setRole(cached.role as Role);setOnline(false);setProducts(await readProductCatalog<Product>(cached.orgId));return;}}
     let {data:membership,error:memberError}=await supabase.from("organization_members").select("organization_id,role").eq("user_id",session.user.id).eq("is_active",true).eq("membership_status","active").limit(1).maybeSingle();
     if(memberError)throw memberError;
     if(!membership){
@@ -104,6 +105,7 @@ export default function StoreApp(){
     const {data:org,error:orgError}=await supabase.from("organizations").select("name").eq("id",membership.organization_id).maybeSingle();
     if(orgError)throw orgError;
     if(org?.name)setOrgName(org.name);if(membership.role==="owner"){const {data:code}=await supabase.rpc("get_store_invite_code");if(code)setInviteCode(String(code));}
+    localStorage.setItem("storeflow:session",JSON.stringify({userId:session.user.id,orgId:membership.organization_id,orgName:org?.name||"StoreFlow",role:membership.role}));
     await reload(membership.organization_id);
    }catch(e){if(active)setLoadError(e instanceof Error?e.message:"ไม่สามารถโหลดข้อมูลร้านค้าได้");}
    finally{if(active)setLoading(false);}
@@ -115,7 +117,7 @@ export default function StoreApp(){
  const syncOfflineOrders=async()=>{if(!orgId||!navigator.onLine)return;const queued=await listOfflineOrders();setOfflineCount(queued.filter(o=>o.organizationId===orgId).length);for(const order of queued){if(order.organizationId!==orgId)continue;const {error}=await supabase.rpc("checkout_sale_idempotent",{p_organization_id:order.organizationId,p_items:order.items,p_payment_method:order.paymentMethod,p_discount:order.discount,p_tax:order.tax,p_customer_id:order.customerId,p_idempotency_key:order.idempotencyKey});if(error)break;await removeOfflineOrder(order.idempotencyKey);}const remaining=await listOfflineOrders();setOfflineCount(remaining.filter(o=>o.organizationId===orgId).length);if(remaining.length<queued.length){await reload();notify("ซิงก์บิลออฟไลน์สำเร็จ");}};
  useEffect(()=>{if(!orgId)return;let mounted=true;const refresh=()=>{if(mounted)void reload(orgId).catch(()=>{});};const channel=supabase.channel("storeflow-live-"+orgId).on("postgres_changes",{event:"*",schema:"public",table:"products",filter:"organization_id=eq."+orgId},refresh).on("postgres_changes",{event:"*",schema:"public",table:"sales",filter:"organization_id=eq."+orgId},refresh).subscribe();const network=()=>{setOnline(navigator.onLine);if(navigator.onLine)void syncOfflineOrders();};setOnline(navigator.onLine);void listOfflineOrders().then(q=>{if(mounted)setOfflineCount(q.filter(o=>o.organizationId===orgId).length);});window.addEventListener("online",network);window.addEventListener("offline",network);if(navigator.onLine)void syncOfflineOrders();return()=>{mounted=false;window.removeEventListener("online",network);window.removeEventListener("offline",network);void supabase.removeChannel(channel);};},[orgId]);
 
- const logout=async()=>{await supabase.auth.signOut();window.location.replace("/Pos/login/");};
+ const logout=async()=>{localStorage.removeItem("storeflow:session");await supabase.auth.signOut();window.location.replace("/Pos/login/");};
  const startCheckout=async(planId:string)=>{
   if(planId==="free"){notify("แพ็กเกจ Free ใช้งานได้โดยไม่ต้องชำระเงิน");return;}
   setBusy(true);
