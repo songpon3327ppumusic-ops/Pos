@@ -248,6 +248,7 @@ export default function StoreApp(){
  const checkout=async()=>{
   if(!cartItems.length){notify("กรุณาเลือกสินค้าก่อน");return;}if(discountValue>subtotal){notify("ส่วนลดมากกว่ายอดสินค้า");return;}
   setBusy(true);
+  if(!navigator.onLine&&payment!=="เงินสด"){notify("ขณะออฟไลน์รับชำระได้เฉพาะเงินสด กรุณาเชื่อมต่ออินเทอร์เน็ตก่อนรับ QR / โอน / บัตร");setBusy(false);return;}
   if(payment==="เงินสด"&&Number(cashReceived)<total){notify("จำนวนเงินที่รับมาต้องไม่น้อยกว่ายอดชำระ");setBusy(false);return;}
   const order={idempotencyKey:crypto.randomUUID(),organizationId:orgId,items:cartItems.map(p=>({product_id:p.id,quantity:p.qty})),paymentMethod:payment,cashReceived:payment==="เงินสด"?Number(cashReceived):null,discount:discountValue,tax:taxValue,customerId:selectedCustomer||null,createdAt:new Date().toISOString()};
   try{
