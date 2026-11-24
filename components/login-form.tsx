@@ -1,11 +1,8 @@
 "use client";
 import { useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
 export default function LoginPage() {
-  const router = useRouter();
-  const params = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -17,9 +14,10 @@ export default function LoginPage() {
       const supabase = createClient();
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
+      const params = new URLSearchParams(window.location.search);
       const next = params.get("next");
-      router.replace(next && next.startsWith("/") && !next.startsWith("//") ? next : "/");
-      router.refresh();
+      const safeNext = next && next.startsWith("/") && !next.startsWith("//") ? next : "/Pos/";
+      window.location.assign(safeNext.startsWith("/Pos") ? safeNext : `/Pos${safeNext}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "เข้าสู่ระบบไม่สำเร็จ");
     } finally { setBusy(false); }
