@@ -1,9 +1,9 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { Activity, BarChart3, Bell, ChevronRight, CircleDollarSign, ClipboardList, Download, LayoutDashboard, LogOut, Menu, Package, Plus, Printer, Search, ShieldCheck, ShoppingCart, Store, UserRound, Users, Wallet, X, Settings, KeyRound, Mail } from "lucide-react";
+import { Activity, BarChart3, Bell, ChevronRight, CircleDollarSign, ClipboardList, Download, LayoutDashboard, LogOut, Menu, Package, Plus, Printer, Search, ShieldCheck, ShoppingCart, Store, UserRound, Users, Wallet, X, Settings, KeyRound, Mail, CreditCard } from "lucide-react";
 
-type Page = "Dashboard" | "POS" | "Orders" | "Inventory" | "Customers" | "Employees" | "Expenses" | "Reports" | "Payroll" | "Permissions" | "Audit" | "Account";
+type Page = "Dashboard" | "POS" | "Orders" | "Inventory" | "Customers" | "Employees" | "Expenses" | "Reports" | "Payroll" | "Permissions" | "Audit" | "Account" | "Billing";
 type Role = "owner" | "admin" | "manager" | "cashier" | "hr" | "accountant" | "employee";
 type Product = { id:string; sku:string; name:string; category:string|null; cost:number; price:number; stock:number; min_stock:number; is_active:boolean };
 type Customer = { id:string; full_name:string; phone:string|null; email:string|null; tier:string; points:number; credit_limit:number };
@@ -25,7 +25,8 @@ const nav:{id:Page;label:string;icon:any;group:string;roles:Role[]}[]=[
  {id:"Payroll",label:"เงินเดือน",icon:Wallet,group:"บุคลากร",roles:["owner","admin","manager","hr","accountant"]},
  {id:"Permissions",label:"สิทธิ์การใช้งาน",icon:ShieldCheck,group:"ตั้งค่า",roles:["owner","admin"]},
  {id:"Audit",label:"ประวัติการใช้งาน",icon:Activity,group:"ตั้งค่า",roles:["owner","admin","manager"]},
- {id:"Account",label:"ตั้งค่าบัญชี",icon:Settings,group:"ตั้งค่า",roles:["owner","admin","manager","cashier","hr","accountant","employee"]}
+ {id:"Account",label:"ตั้งค่าบัญชี",icon:Settings,group:"ตั้งค่า",roles:["owner","admin","manager","cashier","hr","accountant","employee"]},
+ {id:"Billing",label:"แพ็กเกจและสมาชิก",icon:CreditCard,group:"ตั้งค่า",roles:["owner","admin"]}
 ];
 const roleNames:Record<Role,string>={owner:"เจ้าของร้าน",admin:"ผู้ดูแล",manager:"ผู้จัดการ",cashier:"แคชเชียร์",hr:"ฝ่ายบุคคล",accountant:"บัญชี",employee:"พนักงาน"};
 function Card({children,className=""}:{children:React.ReactNode;className?:string}){return <section className={"rounded-2xl border border-slate-100 bg-white p-5 shadow-soft "+className}>{children}</section>}
@@ -36,6 +37,7 @@ export default function StoreApp(){
  const [accountName,setAccountName]=useState(""),[newPassword,setNewPassword]=useState(""),[confirmPassword,setConfirmPassword]=useState("");
  const [products,setProducts]=useState<Product[]>([]),[customers,setCustomers]=useState<Customer[]>([]),[employees,setEmployees]=useState<Employee[]>([]),[sales,setSales]=useState<Sale[]>([]),[saleItems,setSaleItems]=useState<SaleItem[]>([]),[expenses,setExpenses]=useState<Expense[]>([]),[audit,setAudit]=useState<any[]>([]);
  const [payrollPeriods,setPayrollPeriods]=useState<any[]>([]),[payrollItems,setPayrollItems]=useState<any[]>([]),[permissions,setPermissions]=useState<any[]>([]);
+ const [plans,setPlans]=useState<any[]>([]),[subscription,setSubscription]=useState<any>(null),[billingInterval,setBillingInterval]=useState<"month"|"year">("month");
  const [permissionRole,setPermissionRole]=useState<Role>("cashier");
  const [periodStart,setPeriodStart]=useState(new Date(new Date().getFullYear(),new Date().getMonth(),1).toISOString().slice(0,10)),[periodEnd,setPeriodEnd]=useState(new Date().toISOString().slice(0,10)),[payDate,setPayDate]=useState(new Date().toISOString().slice(0,10)),[selectedPeriod,setSelectedPeriod]=useState("");
  const [page,setPage]=useState<Page>("Dashboard"),[mobile,setMobile]=useState(false),[query,setQuery]=useState(""),[toast,setToast]=useState(""),[busy,setBusy]=useState(false);
@@ -58,7 +60,9 @@ export default function StoreApp(){
    supabase.from("audit_logs").select("*").eq("organization_id",id).order("created_at",{ascending:false}).limit(100),
    supabase.from("payroll_periods").select("*").eq("organization_id",id).order("period_start",{ascending:false}),
    supabase.from("payroll_items").select("*").eq("organization_id",id),
-   supabase.from("role_permissions").select("role,module,action,allowed").eq("organization_id",id)
+   supabase.from("role_permissions").select("role,module,action,allowed").eq("organization_id",id),
+   supabase.from("subscription_plans").select("*").eq("is_active",true).order("sort_order"),
+   supabase.from("organization_subscriptions").select("*").eq("organization_id",id).maybeSingle()
   ]);
   const failed=results.find(x=>x.error);
   if(failed?.error)throw failed.error;
@@ -68,7 +72,7 @@ export default function StoreApp(){
   setSales((results[3].data||[]) as Sale[]);
   setSaleItems((results[4].data||[]) as SaleItem[]);
   setExpenses((results[5].data||[]) as Expense[]);
-  setAudit(results[6].data||[]);setPayrollPeriods(results[7].data||[]);setPayrollItems(results[8].data||[]);setPermissions(results[9].data||[]);
+  setAudit(results[6].data||[]);setPayrollPeriods(results[7].data||[]);setPayrollItems(results[8].data||[]);setPermissions(results[9].data||[]);setPlans(results[10].data||[]);setSubscription(results[11].data||null);
  };
  useEffect(()=>{
   let active=true;
@@ -103,6 +107,17 @@ export default function StoreApp(){
   return ()=>{active=false;subscription.unsubscribe();};
  },[supabase]);
  const logout=async()=>{await supabase.auth.signOut();window.location.replace("/Pos/login/");};
+ const startCheckout=async(planId:string)=>{
+  if(planId==="free"){notify("แพ็กเกจ Free ใช้งานได้โดยไม่ต้องชำระเงิน");return;}
+  setBusy(true);
+  try{const {data,error}=await supabase.functions.invoke("storeflow-create-checkout",{body:{organization_id:orgId,plan_id:planId,billing_interval:billingInterval}});if(error)throw error;if(!data?.url)throw new Error(data?.error||"ยังไม่สามารถเปิดหน้าชำระเงินได้");window.location.href=data.url;}
+  catch(e){notify(e instanceof Error?e.message:"เริ่มชำระเงินไม่สำเร็จ");}finally{setBusy(false);}
+ };
+ const openBillingPortal=async()=>{
+  setBusy(true);
+  try{const {data,error}=await supabase.functions.invoke("storeflow-billing-portal",{body:{organization_id:orgId}});if(error)throw error;if(!data?.url)throw new Error(data?.error||"ไม่สามารถเปิดหน้าจัดการสมาชิกได้");window.location.href=data.url;}
+  catch(e){notify(e instanceof Error?e.message:"เปิดหน้าจัดการสมาชิกไม่สำเร็จ");}finally{setBusy(false);}
+ };
  const createPayroll=async()=>{
   if(!orgId||periodEnd<periodStart){notify("ตรวจสอบช่วงวันที่เงินเดือน");return;}
   const activeEmployees=employees.filter(e=>e.is_active);
@@ -220,7 +235,7 @@ export default function StoreApp(){
  const monthExpense=expenses.filter(e=>e.expense_date.slice(0,7)===monthKey&&e.payment_status==="paid").reduce((v,e)=>v+e.amount,0);
  const salesByDay=Array.from({length:7},(_,i)=>{const d=new Date();d.setDate(d.getDate()-(6-i));const key=d.toISOString().slice(0,10);return {label:d.toLocaleDateString("th-TH",{weekday:"short"}),amount:sales.filter(s=>s.created_at.slice(0,10)===key&&s.status==="completed").reduce((v,s)=>v+s.total,0)};});
  const customerName=(id:string|null)=>customers.find(c=>c.id===id)?.full_name||"ลูกค้าทั่วไป";
- const pageTitle:Record<Page,string>={Dashboard:"ภาพรวมร้านค้า",POS:"ขายหน้าร้าน (POS)",Orders:"รายการขาย",Inventory:"สินค้าและสต็อก",Customers:"ลูกค้า",Employees:"พนักงาน",Expenses:"ค่าใช้จ่าย",Reports:"รายงาน",Payroll:"เงินเดือน",Permissions:"สิทธิ์การใช้งาน",Audit:"ประวัติการใช้งาน",Account:"ตั้งค่าบัญชี"};
+ const pageTitle:Record<Page,string>={Dashboard:"ภาพรวมร้านค้า",POS:"ขายหน้าร้าน (POS)",Orders:"รายการขาย",Inventory:"สินค้าและสต็อก",Customers:"ลูกค้า",Employees:"พนักงาน",Expenses:"ค่าใช้จ่าย",Reports:"รายงาน",Payroll:"เงินเดือน",Permissions:"สิทธิ์การใช้งาน",Audit:"ประวัติการใช้งาน",Account:"ตั้งค่าบัญชี",Billing:"แพ็กเกจและสมาชิก"};
  const title=(sub:string,action?:React.ReactNode)=><div className="mb-5 flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-xl font-bold">{pageTitle[page]}</h2><p className="mt-1 text-sm text-slate-500">{sub}</p></div>{action}</div>;
  const table=(heads:string[],rows:React.ReactNode[][])=><div className="overflow-x-auto rounded-xl border border-slate-100"><table className="w-full min-w-[650px] text-left"><thead className="bg-slate-50"><tr>{heads.map(h=><th key={h} className="px-4 py-3 text-xs font-semibold text-slate-400">{h}</th>)}</tr></thead><tbody className="divide-y divide-slate-100">{rows.map((row,i)=><tr key={i} className="hover:bg-slate-50/70">{row.map((cell,j)=><td key={j} className="px-4 py-3 text-sm text-slate-600">{cell}</td>)}</tr>)}</tbody></table></div>;
  const searchBox=<div className="relative mb-4"><Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/><input className={field+" pl-9"} placeholder="ค้นหาข้อมูล..." value={query} onChange={e=>setQuery(e.target.value)}/></div>;
@@ -255,6 +270,13 @@ export default function StoreApp(){
    <Card><div className="mb-3 flex items-center justify-between"><h3 className="font-bold">ตารางสิทธิ์</h3><span className="text-xs text-slate-400">เปลี่ยนแล้วบันทึกทันที</span></div>{table(["โมดูล","ดู","สร้าง","แก้ไข","ลบ","อนุมัติ"],["dashboard","pos","orders","inventory","customers","employees","expenses","reports","payroll","permissions","audit","attendance","leave"].map(module=>{const label:Record<string,string>={dashboard:"ภาพรวม",pos:"ขายหน้าร้าน",orders:"รายการขาย",inventory:"สินค้าและสต็อก",customers:"ลูกค้า",employees:"พนักงาน",expenses:"ค่าใช้จ่าย",reports:"รายงาน",payroll:"เงินเดือน",permissions:"สิทธิ์การใช้งาน",audit:"ประวัติการใช้งาน",attendance:"เวลาเข้างาน",leave:"การลา"};return [label[module],...["read","create","update","delete","approve"].map(action=>{const row=permissions.find(p=>p.role===permissionRole&&p.module===module&&p.action===action);const fallback:Record<string,string[]>={manager:["dashboard","pos","orders","inventory","customers","employees","expenses","reports","audit"],cashier:["dashboard","pos","orders"],hr:["dashboard","employees","payroll","attendance","leave"],accountant:["dashboard","reports","expenses","payroll","orders"],employee:["dashboard","attendance","leave"]};const allowed=row?row.allowed:(fallback[permissionRole]||[]).includes(module)&&(["read","create","update"].includes(action));return <input aria-label={module+" "+action} type="checkbox" disabled={busy} checked={!!allowed} onChange={e=>setPermission(module,action,e.target.checked)}/>})]}))}</Card>
   </div>;
   if(page==="Audit")return <>{title("กิจกรรมที่บันทึกในระบบ")}{audit.length?table(["กิจกรรม","ประเภท","รหัสรายการ","เวลา"],audit.map(a=>[a.action,a.entity_type,a.entity_id||"-",dateText(a.created_at)])):<Empty text="ยังไม่มีประวัติการใช้งาน"/>}</>;
+  if(page==="Billing")return <div className="space-y-5">
+   {title("เลือกแพ็กเกจและจัดการสมาชิกของร้านค้า")}
+   <Card><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-sm text-slate-500">แพ็กเกจปัจจุบัน</p><h3 className="mt-1 text-xl font-bold">{plans.find(p=>p.id===subscription?.plan_id)?.name||"Free"}</h3><p className="mt-1 text-xs text-slate-400">สถานะ: {subscription?.status||"free"} · รอบบิล: {subscription?.billing_interval==="year"?"รายปี":"รายเดือน"}</p>{subscription?.current_period_end&&<p className="mt-1 text-xs text-slate-400">รอบปัจจุบันสิ้นสุด {new Date(subscription.current_period_end).toLocaleDateString("th-TH")}</p>}</div>{subscription?.stripe_customer_id&&<button disabled={busy} onClick={openBillingPortal} className={btn}><CreditCard size={16}/>จัดการการชำระเงิน</button>}</div></Card>
+   <div className="flex flex-wrap items-center justify-between gap-3"><h3 className="font-bold">แพ็กเกจ StoreFlow</h3><div className="inline-flex rounded-xl border bg-white p-1"><button onClick={()=>setBillingInterval("month")} className={billingInterval==="month"?"rounded-lg bg-emerald-600 px-3 py-2 text-sm text-white":"rounded-lg px-3 py-2 text-sm"}>รายเดือน</button><button onClick={()=>setBillingInterval("year")} className={billingInterval==="year"?"rounded-lg bg-emerald-600 px-3 py-2 text-sm text-white":"rounded-lg px-3 py-2 text-sm"}>รายปี</button></div></div>
+   <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">{plans.map(p=><Card key={p.id}><div className="flex h-full flex-col"><div><h3 className="text-lg font-bold">{p.name}</h3><p className="mt-1 min-h-10 text-xs text-slate-500">{p.description}</p><p className="mt-4 text-2xl font-bold">{money(billingInterval==="year"?p.yearly_price_thb:p.monthly_price_thb)}<span className="text-xs font-normal text-slate-400">/{billingInterval==="year"?"ปี":"เดือน"}</span></p></div><div className="my-4 space-y-2 border-y py-4 text-xs text-slate-600"><p>พนักงาน: {p.limits?.employees??"-"} คน</p><p>สินค้า: {Number(p.limits?.products||0).toLocaleString("th-TH")} รายการ</p><p>สาขา: {p.limits?.branches??"-"} สาขา</p><p>{p.features?.payroll?"มีระบบเงินเดือน":"ไม่มีระบบเงินเดือน"}</p><p>{p.features?.advanced_reports?"รายงานขั้นสูง":"รายงานพื้นฐาน"}</p></div><button disabled={busy||p.id==="free"||p.id===subscription?.plan_id||!(billingInterval==="year"?p.stripe_yearly_price_id:p.stripe_monthly_price_id)} onClick={()=>startCheckout(p.id)} className={btn+" mt-auto w-full justify-center"}>{p.id==="free"?"แพ็กเกจเริ่มต้น":p.id===subscription?.plan_id?"แพ็กเกจปัจจุบัน":"เลือกแพ็กเกจ"}</button>{p.id!=="free"&&!(billingInterval==="year"?p.stripe_yearly_price_id:p.stripe_monthly_price_id)&&<p className="mt-2 text-center text-[11px] text-amber-600">กำลังเตรียมช่องทางชำระเงิน</p>}</div></Card>)}</div>
+   <p className="text-xs text-slate-400">ระบบจะเปิดสิทธิ์แพ็กเกจที่ชำระแล้วหลังได้รับการยืนยันจาก Stripe Webhook เท่านั้น</p>
+  </div>;
   if(page==="Account")return <div className="max-w-3xl space-y-5">
    {title("จัดการข้อมูลส่วนตัวและความปลอดภัยของบัญชี")}
    <Card><div className="mb-4 flex items-center gap-3"><div className="rounded-xl bg-emerald-50 p-3 text-emerald-700"><UserRound/></div><div><h3 className="font-bold">ข้อมูลบัญชี</h3><p className="text-xs text-slate-400">ข้อมูลโปรไฟล์ที่ใช้แสดงใน StoreFlow</p></div></div>
