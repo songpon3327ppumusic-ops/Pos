@@ -101,9 +101,9 @@ export default function StoreApp(){
     if(!membership)throw new Error("ไม่พบบัญชีร้านค้าที่ได้รับอนุมัติ กรุณาตรวจสอบรหัสเชิญหรือรอเจ้าของร้านอนุมัติ");
     if(!active)return;
     setOrgId(membership.organization_id);setRole(membership.role as Role);
-    const {data:org,error:orgError}=await supabase.from("organizations").select("name,invite_code").eq("id",membership.organization_id).maybeSingle();
+    const {data:org,error:orgError}=await supabase.from("organizations").select("name").eq("id",membership.organization_id).maybeSingle();
     if(orgError)throw orgError;
-    if(org?.name)setOrgName(org.name);if(org?.invite_code)setInviteCode(org.invite_code);
+    if(org?.name)setOrgName(org.name);if(membership.role==="owner"){const {data:code}=await supabase.rpc("get_store_invite_code");if(code)setInviteCode(String(code));}
     await reload(membership.organization_id);
    }catch(e){if(active)setLoadError(e instanceof Error?e.message:"ไม่สามารถโหลดข้อมูลร้านค้าได้");}
    finally{if(active)setLoading(false);}
