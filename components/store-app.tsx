@@ -26,7 +26,7 @@ const nav:{id:Page;label:string;icon:any;group:string;roles:Role[]}[]=[
  {id:"Payroll",label:"เงินเดือน",icon:Wallet,group:"บุคลากร",roles:["owner","admin","manager","hr","accountant"]},
  {id:"Permissions",label:"สิทธิ์การใช้งาน",icon:ShieldCheck,group:"ตั้งค่า",roles:["owner","admin"]},
  {id:"Audit",label:"ประวัติการใช้งาน",icon:Activity,group:"ตั้งค่า",roles:["owner","admin","manager"]},
- {id:"Account",label:"ตั้งค่าบัญชี",icon:Settings,group:"ตั้งค่า",roles:["owner","admin","manager","cashier","hr","accountant","employee"]},
+ {id:"Account",label:"ตั้งค่าบัญชี",icon:Settings,group:"ตั้งค่า",roles:["owner","admin","manager","hr","accountant","employee"]},
  {id:"Billing",label:"แพ็กเกจและสมาชิก",icon:CreditCard,group:"ตั้งค่า",roles:["owner","admin"]}
 ];
 const roleNames:Record<Role,string>={owner:"เจ้าของร้าน",admin:"ผู้ดูแล",manager:"ผู้จัดการ",cashier:"แคชเชียร์",hr:"ฝ่ายบุคคล",accountant:"บัญชี",employee:"พนักงาน"};
