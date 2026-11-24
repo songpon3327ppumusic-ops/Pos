@@ -246,21 +246,34 @@ create policy "organization members read org" on public.organizations for select
   exists(select 1 from public.organization_members m where m.organization_id = id and m.user_id = (select auth.uid()) and m.is_active)
 );
 
--- Organization-scoped tables. Policies intentionally grant authenticated members basic access;
--- fine-grained role_permissions enforcement must also be performed by trusted server/API actions.
+-- Tenant isolation and role-aware writes.
+-- Reads are available to active members; mutation rights are limited by organization role.
 do $$
 declare t text;
 begin
   foreach t in array array['role_permissions','products','employees','shifts','attendance','leave_requests','customers','sales','sale_items','stock_movements','expenses','payroll_periods','payroll_items','audit_logs']
   loop
-    execute format('create policy %I on public.%I for select to authenticated using (exists(select 1 from public.organization_members m where m.organization_id = organization_id and m.user_id = (select auth.uid()) and m.is_active))', t || '_member_select', t);
-    execute format('create policy %I on public.%I for insert to authenticated with check (exists(select 1 from public.organization_members m where m.organization_id = organization_id and m.user_id = (select auth.uid()) and m.is_active))', t || '_member_insert', t);
-    execute format('create policy %I on public.%I for update to authenticated using (exists(select 1 from public.organization_members m where m.organization_id = organization_id and m.user_id = (select auth.uid()) and m.is_active)) with check (exists(select 1 from public.organization_members m where m.organization_id = organization_id and m.user_id = (select auth.uid()) and m.is_active))', t || '_member_update', t);
-    execute format('create policy %I on public.%I for delete to authenticated using (exists(select 1 from public.organization_members m where m.organization_id = organization_id and m.user_id = (select auth.uid()) and m.is_active))', t || '_member_delete', t);
+    execute format(
+      'create policy %I on public.%I for select to authenticated using (exists(select 1 from public.organization_members m where m.organization_id = %I.organization_id and m.user_id = (select auth.uid()) and m.is_active))',
+      t || '_member_select', t, t
+    );
+    execute format(
+      'create policy %I on public.%I for insert to authenticated with check (exists(select 1 from public.organization_members m where m.organization_id = %I.organization_id and m.user_id = (select auth.uid()) and m.is_active and m.role in (''owner'',''admin'',''manager'')))',
+      t || '_manager_insert', t, t
+    );
+    execute format(
+      'create policy %I on public.%I for update to authenticated using (exists(select 1 from public.organization_members m where m.organization_id = %I.organization_id and m.user_id = (select auth.uid()) and m.is_active and m.role in (''owner'',''admin'',''manager''))) with check (exists(select 1 from public.organization_members m where m.organization_id = %I.organization_id and m.user_id = (select auth.uid()) and m.is_active and m.role in (''owner'',''admin'',''manager'')))',
+      t || '_manager_update', t, t, t
+    );
+    execute format(
+      'create policy %I on public.%I for delete to authenticated using (exists(select 1 from public.organization_members m where m.organization_id = %I.organization_id and m.user_id = (select auth.uid()) and m.is_active and m.role in (''owner'',''admin'')))',
+      t || '_admin_delete', t, t
+    );
   end loop;
 end $$;
 
--- No anonymous table access. Authenticated grants are subject to RLS.
+-- Organization membership can be inspected by the user, but cannot be self-assigned through the client.
+-- Bootstrap the first organization and owner membership from the SQL editor using the verified Auth user UUID.
 revoke all on all tables in schema public from anon;
 grant select, insert, update, delete on all tables in schema public to authenticated;
 grant usage, select on all sequences in schema public to authenticated;
