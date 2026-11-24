@@ -15,7 +15,7 @@ type SaleItem = { sale_id:string; quantity:number; unit_price:number; unit_cost:
 const money=(n:number)=>new Intl.NumberFormat("th-TH",{style:"currency",currency:"THB",maximumFractionDigits:2}).format(n||0);
 const dateText=(v:string)=>new Date(v).toLocaleString("th-TH",{dateStyle:"medium",timeStyle:"short"});
 const nav:{id:Page;label:string;icon:any;group:string;roles:Role[]}[]=[
- {id:"Dashboard",label:"ภาพรวม",icon:LayoutDashboard,group:"หลัก",roles:["owner","admin","manager","cashier","employee"]},
+ {id:"Dashboard",label:"ภาพรวม",icon:LayoutDashboard,group:"หลัก",roles:["owner","admin","manager","employee"]},
  {id:"POS",label:"ขายหน้าร้าน (POS)",icon:ShoppingCart,group:"การขาย",roles:["owner","admin","manager","cashier"]},
  {id:"Orders",label:"รายการขาย",icon:ClipboardList,group:"การขาย",roles:["owner","admin","manager","cashier"]},
  {id:"Inventory",label:"สินค้าและสต็อก",icon:Package,group:"จัดการร้าน",roles:["owner","admin","manager"]},
@@ -177,7 +177,7 @@ export default function StoreApp(){
   if(row)return row.allowed===true;
   const defaults:Record<string,{modules:string[];actions:string[]}>={
    manager:{modules:["dashboard","pos","orders","inventory","customers","employees","expenses","reports","audit"],actions:["read","create","update"]},
-   cashier:{modules:["dashboard","pos","orders","inventory"],actions:["read","create"]},
+   cashier:{modules:["pos","orders","inventory"],actions:["read","create"]},
    hr:{modules:["dashboard","employees","payroll","attendance","leave"],actions:["read","create","update"]},
    accountant:{modules:["dashboard","reports","expenses","payroll","orders"],actions:["read","create","update","approve"]},
    employee:{modules:["dashboard","attendance","leave"],actions:["read","create"]}
