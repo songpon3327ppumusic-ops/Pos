@@ -1,1 +1,9 @@
-const nextConfig={poweredByHeader:false};export default nextConfig;
+const nextConfig = {
+  output: "export",
+  basePath: "/Pos",
+  trailingSlash: true,
+  images: { unoptimized: true },
+  poweredByHeader: false,
+};
+
+export default nextConfig;
