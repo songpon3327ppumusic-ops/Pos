@@ -56,6 +56,9 @@ Deno.serve(async (req) => {
     }
 
     const event = JSON.parse(rawBody);
+    if (Boolean(event.livemode) !== stripeSecret.startsWith("sk_live_")) {
+      return new Response("Stripe test/live mode mismatch", { status: 400 });
+    }
     const object = event.data?.object ?? {};
     const admin = createClient(supabaseUrl, serviceRole);
 
