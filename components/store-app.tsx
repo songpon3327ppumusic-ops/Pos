@@ -35,6 +35,9 @@ export default function StoreApp(){
  const [loading,setLoading]=useState(true),[loadError,setLoadError]=useState(""),[orgId,setOrgId]=useState(""),[orgName,setOrgName]=useState("StoreFlow"),[userEmail,setUserEmail]=useState(""),[role,setRole]=useState<Role>("employee");
  const [accountName,setAccountName]=useState(""),[newPassword,setNewPassword]=useState(""),[confirmPassword,setConfirmPassword]=useState("");
  const [products,setProducts]=useState<Product[]>([]),[customers,setCustomers]=useState<Customer[]>([]),[employees,setEmployees]=useState<Employee[]>([]),[sales,setSales]=useState<Sale[]>([]),[saleItems,setSaleItems]=useState<SaleItem[]>([]),[expenses,setExpenses]=useState<Expense[]>([]),[audit,setAudit]=useState<any[]>([]);
+ const [payrollPeriods,setPayrollPeriods]=useState<any[]>([]),[payrollItems,setPayrollItems]=useState<any[]>([]),[permissions,setPermissions]=useState<any[]>([]);
+ const [permissionRole,setPermissionRole]=useState<Role>("cashier");
+ const [periodStart,setPeriodStart]=useState(new Date(new Date().getFullYear(),new Date().getMonth(),1).toISOString().slice(0,10)),[periodEnd,setPeriodEnd]=useState(new Date().toISOString().slice(0,10)),[payDate,setPayDate]=useState(new Date().toISOString().slice(0,10)),[selectedPeriod,setSelectedPeriod]=useState("");
  const [page,setPage]=useState<Page>("Dashboard"),[mobile,setMobile]=useState(false),[query,setQuery]=useState(""),[toast,setToast]=useState(""),[busy,setBusy]=useState(false);
  const [modal,setModal]=useState<"product"|"customer"|"employee"|"expense"|"stock"|"receipt"|null>(null),[record,setRecord]=useState<any>(null);
  const [form,setForm]=useState({name:"",sku:"",category:"ทั่วไป",price:"",cost:"",stock:"",phone:"",email:"",amount:"",position:"",department:""});
@@ -52,7 +55,10 @@ export default function StoreApp(){
    supabase.from("sales").select("*").eq("organization_id",id).order("created_at",{ascending:false}).limit(500),
    supabase.from("sale_items").select("sale_id,quantity,unit_price,unit_cost,line_total").eq("organization_id",id),
    supabase.from("expenses").select("*").eq("organization_id",id).order("expense_date",{ascending:false}).limit(500),
-   supabase.from("audit_logs").select("*").eq("organization_id",id).order("created_at",{ascending:false}).limit(100)
+   supabase.from("audit_logs").select("*").eq("organization_id",id).order("created_at",{ascending:false}).limit(100),
+   supabase.from("payroll_periods").select("*").eq("organization_id",id).order("period_start",{ascending:false}),
+   supabase.from("payroll_items").select("*").eq("organization_id",id),
+   supabase.from("role_permissions").select("role,module,action,allowed").eq("organization_id",id)
   ]);
   const failed=results.find(x=>x.error);
   if(failed?.error)throw failed.error;
@@ -62,7 +68,7 @@ export default function StoreApp(){
   setSales((results[3].data||[]) as Sale[]);
   setSaleItems((results[4].data||[]) as SaleItem[]);
   setExpenses((results[5].data||[]) as Expense[]);
-  setAudit(results[6].data||[]);
+  setAudit(results[6].data||[]);setPayrollPeriods(results[7].data||[]);setPayrollItems(results[8].data||[]);setPermissions(results[9].data||[]);
  };
  useEffect(()=>{
   let active=true;
@@ -97,10 +103,51 @@ export default function StoreApp(){
   return ()=>{active=false;subscription.unsubscribe();};
  },[supabase]);
  const logout=async()=>{await supabase.auth.signOut();window.location.replace("/Pos/login/");};
+ const createPayroll=async()=>{
+  if(!orgId||periodEnd<periodStart){notify("ตรวจสอบช่วงวันที่เงินเดือน");return;}
+  const activeEmployees=employees.filter(e=>e.is_active);
+  if(!activeEmployees.length){notify("ยังไม่มีพนักงานที่เปิดใช้งาน");return;}
+  setBusy(true);
+  try{
+   const {data:period,error}=await supabase.from("payroll_periods").insert({organization_id:orgId,period_start:periodStart,period_end:periodEnd,pay_date:payDate,status:"draft"}).select("*").single();
+   if(error)throw error;
+   const rows=activeEmployees.map(e=>({organization_id:orgId,payroll_period_id:period.id,employee_id:e.id,base_pay:Number(e.base_salary)||0,allowances:0,overtime_pay:0,commission:0,bonus:0,deductions:0,tax:0,social_security:0,net_pay:Number(e.base_salary)||0}));
+   const {error:itemError}=await supabase.from("payroll_items").insert(rows);
+   if(itemError)throw itemError;
+   await reload();setSelectedPeriod(period.id);notify("สร้างรอบเงินเดือนและรายการพนักงานแล้ว");
+  }catch(e){notify(e instanceof Error?e.message:"สร้างรอบเงินเดือนไม่สำเร็จ");}finally{setBusy(false);}
+ };
+ const updatePayrollStatus=async(period:any,status:"approved"|"paid")=>{
+  setBusy(true);
+  try{
+   const patch:any={status};
+   if(status==="approved"){patch.approved_by=(await supabase.auth.getUser()).data.user?.id;patch.approved_at=new Date().toISOString();}
+   if(status==="paid")patch.pay_date=payDate;
+   const {error}=await supabase.from("payroll_periods").update(patch).eq("id",period.id).eq("organization_id",orgId);
+   if(error)throw error;
+   await reload();notify(status==="approved"?"อนุมัติรอบเงินเดือนแล้ว":"บันทึกสถานะจ่ายเงินเดือนแล้ว");
+  }catch(e){notify(e instanceof Error?e.message:"อัปเดตสถานะไม่สำเร็จ");}finally{setBusy(false);}
+ };
+ const setPermission=async(module:string,action:string,allowed:boolean)=>{
+  if(!orgId||permissionRole==="owner"||permissionRole==="admin")return;
+  setBusy(true);
+  try{
+   const {error}=await supabase.from("role_permissions").upsert({organization_id:orgId,role:permissionRole,module,action,allowed},{onConflict:"organization_id,role,module,action"});
+   if(error)throw error;
+   await reload();notify("บันทึกสิทธิ์การใช้งานแล้ว");
+  }catch(e){notify(e instanceof Error?e.message:"บันทึกสิทธิ์ไม่สำเร็จ");}finally{setBusy(false);}
+ };
  const saveAccountName=async()=>{const value=accountName.trim();if(!value){notify("กรุณากรอกชื่อที่แสดง");return;}setBusy(true);try{const {error}=await supabase.auth.updateUser({data:{full_name:value}});if(error)throw error;notify("บันทึกชื่อบัญชีแล้ว");}catch(e){notify(e instanceof Error?e.message:"บันทึกบัญชีไม่สำเร็จ");}finally{setBusy(false);}};
  const saveAccountPassword=async()=>{if(newPassword.length<8){notify("รหัสผ่านใหม่ต้องมีอย่างน้อย 8 ตัวอักษร");return;}if(newPassword!==confirmPassword){notify("รหัสผ่านทั้งสองช่องไม่ตรงกัน");return;}setBusy(true);try{const {error}=await supabase.auth.updateUser({password:newPassword});if(error)throw error;setNewPassword("");setConfirmPassword("");notify("เปลี่ยนรหัสผ่านเรียบร้อย");}catch(e){notify(e instanceof Error?e.message:"เปลี่ยนรหัสผ่านไม่สำเร็จ");}finally{setBusy(false);}};
- const visible=nav.filter(n=>n.roles.includes(role));
- const navigate=(p:Page)=>{setPage(p);setQuery("");setMobile(false)};
+ const canAccess=(module:string,action="read")=>{
+  if(role==="owner"||role==="admin")return true;
+  const row=permissions.find(p=>p.role===role&&p.module===module.toLowerCase()&&p.action===action);
+  if(row)return row.allowed===true;
+  const defaults:Record<string,string[]>={manager:["dashboard","pos","orders","inventory","customers","employees","expenses","reports","audit"],cashier:["dashboard","pos","orders"],hr:["dashboard","employees","payroll","attendance","leave"],accountant:["dashboard","reports","expenses","payroll","orders"],employee:["dashboard","attendance","leave"]};
+  return (defaults[role]||[]).includes(module.toLowerCase());
+ };
+ const visible=nav.filter(n=>n.roles.includes(role)&&canAccess(n.id));
+ const navigate=(p:Page)=>{if(p!=="Account"&&!canAccess(p)){notify("คุณไม่มีสิทธิ์เข้าถึงเมนูนี้");return;}setPage(p);setQuery("");setMobile(false)};
  const cartItems=cart.map(c=>{const p=products.find(x=>x.id===c.id);return p?{...p,qty:c.qty}:null}).filter(Boolean) as (Product&{qty:number})[];
  const subtotal=cartItems.reduce((s,p)=>s+p.price*p.qty,0),discountValue=Math.max(0,Number(discount)||0),taxValue=vat?Math.round(Math.max(0,subtotal-discountValue)*.07*100)/100:0,total=Math.max(0,subtotal-discountValue)+taxValue;
  const addToCart=(p:Product)=>{if(p.stock<=0){notify("สินค้าหมดสต็อก");return;}setCart(old=>{const item=old.find(x=>x.id===p.id);const next=item?old.map(x=>x.id===p.id?{...x,qty:x.qty+1}:x):[...old,{id:p.id,qty:1}];return next.map(x=>x.id===p.id?{...x,qty:Math.min(x.qty,p.stock)}:x);});};
@@ -180,6 +227,19 @@ export default function StoreApp(){
   if(page==="Employees")return <>{title("ทะเบียนพนักงานจริง",<button onClick={()=>openModal("employee")} className={btn}><Plus size={16}/>เพิ่มพนักงาน</button>)}{searchBox}{employees.length?table(["รหัส","ชื่อพนักงาน","ตำแหน่ง","แผนก","โทรศัพท์","สถานะ"],employees.filter(e=>(e.full_name+" "+e.employee_code).toLowerCase().includes(query.toLowerCase())).map(e=>[e.employee_code,<b>{e.full_name}</b>,e.position||"-",e.department||"-",e.phone||"-",e.is_active?"ปฏิบัติงาน":"ปิดใช้งาน"])):<Empty text="ยังไม่มีข้อมูลพนักงาน"/>}</>;
   if(page==="Expenses")return <>{title("ค่าใช้จ่ายที่บันทึกจริง",<button onClick={()=>openModal("expense")} className={btn}><Plus size={16}/>บันทึกค่าใช้จ่าย</button>)}{searchBox}{expenses.length?table(["รายการ","หมวดหมู่","วันที่","จำนวนเงิน","สถานะ"],expenses.filter(e=>(e.title+" "+e.category).toLowerCase().includes(query.toLowerCase())).map(e=>[<b>{e.title}</b>,e.category,e.expense_date,money(e.amount),e.payment_status])):<Empty text="ยังไม่มีค่าใช้จ่าย"/>}</>;
   if(page==="Reports")return <><div className="grid gap-4 sm:grid-cols-3"><Card><p className="text-sm text-slate-500">ยอดขายเดือนนี้</p><b className="mt-2 block text-2xl">{money(monthSales.reduce((v,s)=>v+s.total,0))}</b></Card><Card><p className="text-sm text-slate-500">ต้นทุนขายเดือนนี้</p><b className="mt-2 block text-2xl">{money(monthSales.reduce((v,s)=>v+s.subtotal,0)-grossProfit)}</b></Card><Card><p className="text-sm text-slate-500">ค่าใช้จ่ายเดือนนี้</p><b className="mt-2 block text-2xl">{money(monthExpense)}</b></Card></div><Card className="mt-5"><h3 className="mb-3 font-bold">สรุปรายการขายตามวันที่</h3>{table(["วันที่","จำนวนบิล","ยอดขาย"],salesByDay.map(d=>[d.label,sales.filter(s=>new Date(s.created_at).toLocaleDateString("th-TH",{weekday:"short"})===d.label).length,money(d.amount)]))}</Card></>;
+  if(page==="Payroll")return <div className="space-y-5">
+   {title("จัดทำรอบเงินเดือนและคำนวณยอดจ่าย")}
+   <Card><h3 className="mb-3 font-bold">สร้างรอบเงินเดือน</h3><div className="grid gap-3 sm:grid-cols-3"><label className="text-sm">เริ่มรอบ<input type="date" className={field+" mt-1"} value={periodStart} onChange={e=>setPeriodStart(e.target.value)}/></label><label className="text-sm">สิ้นสุดรอบ<input type="date" className={field+" mt-1"} value={periodEnd} onChange={e=>setPeriodEnd(e.target.value)}/></label><label className="text-sm">กำหนดจ่าย<input type="date" className={field+" mt-1"} value={payDate} onChange={e=>setPayDate(e.target.value)}/></label></div><button disabled={busy||!canAccess("payroll","create")} onClick={createPayroll} className={btn+" mt-4"}><Plus size={16}/>สร้างรอบเงินเดือนจากพนักงานที่เปิดใช้งาน</button><p className="mt-2 text-xs text-slate-400">ยอดเริ่มต้นคำนวณจากเงินเดือนพื้นฐานในทะเบียนพนักงาน ส่วนเบี้ยเลี้ยง OT คอมมิชชัน โบนัส ภาษี ประกันสังคม และรายการหักสามารถปรับในรายการเงินเดือนก่อนอนุมัติได้ในระยะถัดไป</p></Card>
+   <Card><div className="mb-3 flex flex-wrap items-center justify-between gap-3"><h3 className="font-bold">รอบเงินเดือน</h3><select className={field+" max-w-xs"} value={selectedPeriod} onChange={e=>setSelectedPeriod(e.target.value)}><option value="">เลือกรอบเงินเดือน</option>{payrollPeriods.map(p=><option key={p.id} value={p.id}>{p.period_start} ถึง {p.period_end} · {p.status}</option>)}</select></div>
+    {payrollPeriods.length?table(["รอบ","วันจ่าย","พนักงาน","ยอดสุทธิ","สถานะ","ดำเนินการ"],payrollPeriods.map(p=>{const items=payrollItems.filter(i=>i.payroll_period_id===p.id);const total=items.reduce((sum,i)=>sum+Number(i.net_pay??0),0);return [p.period_start+" – "+p.period_end,p.pay_date||"-",items.length+" คน",money(total),p.status==="draft"?"ฉบับร่าง":p.status==="approved"?"อนุมัติแล้ว":"จ่ายแล้ว",<div className="flex flex-wrap gap-2">{p.status==="draft"&&canAccess("payroll","approve")&&<button disabled={busy} onClick={()=>updatePayrollStatus(p,"approved")} className="rounded-lg border px-3 py-1.5 text-xs">อนุมัติ</button>}{p.status==="approved"&&canAccess("payroll","approve")&&<button disabled={busy} onClick={()=>updatePayrollStatus(p,"paid")} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs text-white">บันทึกจ่ายแล้ว</button>}</div>]})):<Empty text="ยังไม่มีรอบเงินเดือน"/>}
+   </Card>
+   {selectedPeriod&&<Card><h3 className="mb-3 font-bold">รายละเอียดเงินเดือน</h3>{table(["พนักงาน","เงินเดือนพื้นฐาน","เบี้ยเลี้ยง","OT","โบนัส","รายการหัก","ภาษี","ประกันสังคม","สุทธิ"],payrollItems.filter(i=>i.payroll_period_id===selectedPeriod).map(i=>{const emp=employees.find(e=>e.id===i.employee_id);return [emp?.full_name||"พนักงาน",money(Number(i.base_pay)),money(Number(i.allowances)),money(Number(i.overtime_pay)),money(Number(i.bonus)),money(Number(i.deductions)),money(Number(i.tax)),money(Number(i.social_security)),<b>{money(Number(i.net_pay||0))}</b>]}))}</Card>}
+  </div>;
+  if(page==="Permissions")return <div className="space-y-5">
+   {title("กำหนดสิทธิ์การเข้าถึงแยกตามบทบาทและโมดูล")}
+   <Card><label className="block max-w-xs text-sm font-medium">เลือกบทบาท<select className={field+" mt-1"} value={permissionRole} onChange={e=>setPermissionRole(e.target.value as Role)}><option value="manager">ผู้จัดการ</option><option value="cashier">แคชเชียร์</option><option value="hr">ฝ่ายบุคคล</option><option value="accountant">บัญชี</option><option value="employee">พนักงาน</option></select></label><p className="mt-3 text-xs text-slate-400">เจ้าของร้านและผู้ดูแลระบบมีสิทธิ์เต็มเสมอเพื่อป้องกันการล็อกตัวเองออกจากระบบ</p></Card>
+   <Card><div className="mb-3 flex items-center justify-between"><h3 className="font-bold">ตารางสิทธิ์</h3><span className="text-xs text-slate-400">เปลี่ยนแล้วบันทึกทันที</span></div>{table(["โมดูล","ดู","สร้าง","แก้ไข","ลบ","อนุมัติ"],["dashboard","pos","orders","inventory","customers","employees","expenses","reports","payroll","permissions","audit","attendance","leave"].map(module=>{const label:Record<string,string>={dashboard:"ภาพรวม",pos:"ขายหน้าร้าน",orders:"รายการขาย",inventory:"สินค้าและสต็อก",customers:"ลูกค้า",employees:"พนักงาน",expenses:"ค่าใช้จ่าย",reports:"รายงาน",payroll:"เงินเดือน",permissions:"สิทธิ์การใช้งาน",audit:"ประวัติการใช้งาน",attendance:"เวลาเข้างาน",leave:"การลา"};return [label[module],...["read","create","update","delete","approve"].map(action=>{const row=permissions.find(p=>p.role===permissionRole&&p.module===module&&p.action===action);const fallback:Record<string,string[]>={manager:["dashboard","pos","orders","inventory","customers","employees","expenses","reports","audit"],cashier:["dashboard","pos","orders"],hr:["dashboard","employees","payroll","attendance","leave"],accountant:["dashboard","reports","expenses","payroll","orders"],employee:["dashboard","attendance","leave"]};const allowed=row?row.allowed:(fallback[permissionRole]||[]).includes(module)&&(["read","create","update"].includes(action));return <input aria-label={module+" "+action} type="checkbox" disabled={busy} checked={!!allowed} onChange={e=>setPermission(module,action,e.target.checked)}/>})]}))}</Card>
+  </div>;
   if(page==="Audit")return <>{title("กิจกรรมที่บันทึกในระบบ")}{audit.length?table(["กิจกรรม","ประเภท","รหัสรายการ","เวลา"],audit.map(a=>[a.action,a.entity_type,a.entity_id||"-",dateText(a.created_at)])):<Empty text="ยังไม่มีประวัติการใช้งาน"/>}</>;
   if(page==="Account")return <div className="max-w-3xl space-y-5">
    {title("จัดการข้อมูลส่วนตัวและความปลอดภัยของบัญชี")}
