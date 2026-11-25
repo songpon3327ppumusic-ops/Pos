@@ -130,9 +130,19 @@ private val tabs = listOf(
 
 @Composable
 private fun StoreFlowRoot() {
+    val context = LocalContext.current
     val client = remember { StoreFlowSupabase.client }
     var ready by remember { mutableStateOf(false) }
     var signedIn by remember { mutableStateOf(false) }
+    LaunchedEffect(signedIn) {
+        if (signedIn) {
+            val prefs = context.getSharedPreferences("storeflow-consent", Context.MODE_PRIVATE)
+            if (prefs.getBoolean("pending_google_consent", false)) {
+                runCatching { StoreFlowRepository(client).recordPrivacyConsent() }
+                prefs.edit().remove("pending_google_consent").apply()
+            }
+        }
+    }
     LaunchedEffect(client) {
         signedIn = client.auth.currentSessionOrNull() != null
         ready = true
@@ -191,8 +201,11 @@ private fun LoginScreen() {
                     style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold
                 )
                 if (mode == "login") {
-                    OutlinedButton(onClick = { runAuth { repo.signInWithGoogle() } },
-                        enabled = !busy, modifier = Modifier.fillMaxWidth().height(50.dp)) {
+                    OutlinedButton(onClick = {
+                        context.getSharedPreferences("storeflow-consent", Context.MODE_PRIVATE)
+                            .edit().putBoolean("pending_google_consent", true).apply()
+                        runAuth { repo.signInWithGoogle() }
+                    }, enabled = !busy && consentAccepted, modifier = Modifier.fillMaxWidth().height(50.dp)) {
                         Icon(Icons.Default.AccountCircle, null); Spacer(Modifier.width(8.dp)); Text("เข้าสู่ระบบด้วย Google")
                     }
                 }
@@ -209,7 +222,7 @@ private fun LoginScreen() {
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodySmall)
                 }
-                if (mode != "login") {
+                {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(checked = consentAccepted, onCheckedChange = { consentAccepted = it })
                         Text("ฉันยินยอมให้ประมวลผลข้อมูลส่วนบุคคล และยอมรับข้อกำหนดการใช้งานกับนโยบายความเป็นส่วนตัว", style = MaterialTheme.typography.bodySmall)
