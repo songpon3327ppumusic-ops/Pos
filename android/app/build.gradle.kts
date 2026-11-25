@@ -37,6 +37,7 @@ android {
             create("release") {
                 storeFile = file(releaseStoreFile)
                 storePassword = releaseStorePassword
+                storeType = "PKCS12"
                 keyAlias = releaseKeyAlias
                 keyPassword = releaseKeyPassword
             }
