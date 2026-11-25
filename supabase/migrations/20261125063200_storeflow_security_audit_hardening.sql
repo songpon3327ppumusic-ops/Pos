@@ -205,4 +205,51 @@ create trigger guard_store_payment_gateway_state before insert or update
 on public.store_payment_settings for each row
 execute function private.guard_store_payment_gateway_state();
 
+-- Require both active flag and active membership status in tenant checks.
+create or replace function private.is_org_member(p_organization_id uuid)
+returns boolean language sql stable security definer set search_path to ''
+as $function$
+ select exists (
+  select 1 from public.organization_members m
+  where m.organization_id=p_organization_id
+   and m.user_id=(select auth.uid())
+   and m.is_active=true and m.membership_status='active'
+ );
+$function$;
+
+-- Business document attachments and private settings assets follow document
+-- module/owner permissions instead of granting every store member access.
+drop policy if exists business_document_attachments_member_select on public.business_document_attachments;
+create policy business_document_attachments_member_select
+on public.business_document_attachments
+for select to authenticated
+using (private.is_org_member(organization_id)
+ and private.has_module_access(organization_id,'documents','read'));
+
+drop policy if exists business_documents_storage_select on storage.objects;
+create policy business_documents_storage_select
+on storage.objects
+for select to authenticated
+using (
+ bucket_id='business-documents'
+ and (storage.foldername(name))[1] ~* '^[0-9a-f-]{36}$'
+ and (
+  (
+   (storage.foldername(name))[2]='settings'
+   and exists (
+    select 1 from public.organization_members m
+    where m.organization_id=((storage.foldername(name))[1])::uuid
+     and m.user_id=(select auth.uid())
+     and m.is_active=true and m.membership_status='active'
+     and m.role in ('owner','admin')
+   )
+  )
+  or
+  (
+   (storage.foldername(name))[2]='documents'
+   and private.has_module_access(((storage.foldername(name))[1])::uuid,'documents','read')
+  )
+ )
+);
+
 commit;
