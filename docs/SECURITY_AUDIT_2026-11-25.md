@@ -36,8 +36,8 @@ This is a source/configuration/database security review of the StoreFlow reposit
 ### 3. Stripe billing webhook
 
 - Continues to verify the Stripe signature against the raw body, enforce the timestamp tolerance, and reject test/live mode mismatches.
-- Lifetime Checkout now checks THB currency, non-zero discounted total, configured Stripe Price ID, quantity, and subtotal against the actual Stripe Price object before granting lifetime entitlement.
-- Subscription events now check the configured plan, billing interval, Price ID, THB currency, unit amount, recurring interval, and quantity before updating the store subscription. Existing subscriptions can still process cancellation/payment-status events if a plan is later deactivated.
+- Lifetime Checkout now checks THB currency, non-zero discounted total, configured Stripe Price ID, quantity, subtotal against the actual Stripe Price object, and that the Stripe customer matches the store's saved billing customer before granting lifetime entitlement.
+- Subscription events now check the configured plan, billing interval, Price ID, THB currency, unit amount, recurring interval, quantity, and saved store billing-customer binding before updating the store subscription. Existing subscriptions can still process cancellation/payment-status events if a plan is later deactivated.
 - Entitlements continue to be granted only from signed webhook events, not from the browser return URL.
 
 ### 4. GitHub Actions and dependency hygiene
