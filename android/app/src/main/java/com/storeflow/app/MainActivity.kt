@@ -21,6 +21,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
 import com.storeflow.app.data.*
 import com.storeflow.app.ui.theme.StoreFlowTheme
 import io.github.jan.supabase.auth.auth
@@ -57,6 +58,13 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         StoreFlowSupabase.client.handleDeeplinks(intent)
+        androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, true)
+        window.statusBarColor = android.graphics.Color.rgb(246, 248, 251)
+        window.navigationBarColor = android.graphics.Color.WHITE
+        androidx.core.view.WindowInsetsControllerCompat(window, window.decorView).apply {
+            isAppearanceLightStatusBars = true
+            isAppearanceLightNavigationBars = true
+        }
         setContent { StoreFlowTheme { StoreFlowRoot() } }
     }
     override fun onNewIntent(intent: Intent) {
@@ -225,8 +233,10 @@ private fun Workspace() {
             TopAppBar(
                 title = { Column {
                     Text("StoreFlow", fontWeight = FontWeight.Bold)
-                    Text(active.name, style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (!active.name.equals("StoreFlow", ignoreCase = true)) {
+                        Text(active.name, style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 } },
                 actions = { IconButton(onClick = { scope.launch { refresh() } }, enabled = !busy) {
                     if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
@@ -405,43 +415,65 @@ private fun PosScreen(
 ) {
     val cart = remember { mutableStateMapOf<String, Double>() }
     val scope = rememberCoroutineScope()
-    var paying by remember { mutableStateOf(false) }; var busy by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    var search by rememberSaveable { mutableStateOf("") }
+    var paying by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
+    var receipt by remember { mutableStateOf<String?>(null) }
     val selected = products.filter { (cart[it.id] ?: 0.0) > 0 }
     val total = selected.sumOf { it.price * (cart[it.id] ?: 0.0) }
+    val filtered = products.filter { p ->
+        search.isBlank() || p.name.contains(search, true) ||
+            p.sku.contains(search, true) || p.barcode.orEmpty().contains(search, true)
+    }
     Column(modifier.fillMaxSize().padding(horizontal = 14.dp)) {
         Spacer(Modifier.height(8.dp))
         Text("ขายหน้าร้าน", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-        Text("เลือกสินค้าเพื่อเพิ่มลงตะกร้า", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("ค้นหาชื่อสินค้า SKU หรือบาร์โค้ด", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        OutlinedTextField(
+            value = search, onValueChange = { search = it },
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 8.dp),
+            singleLine = true, label = { Text("ค้นหาสินค้า / สแกนบาร์โค้ด") },
+            leadingIcon = { Icon(Icons.Default.Search, null) },
+            trailingIcon = { if (search.isNotBlank()) IconButton(onClick = { search = "" }) { Icon(Icons.Default.Close, "ล้าง") } }
+        )
         LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-            items(products, key = { it.id }) { p ->
+            if (filtered.isEmpty()) item { EmptyCard("ไม่พบสินค้า", "ตรวจสอบคำค้นหา SKU หรือบาร์โค้ด") }
+            items(filtered, key = { it.id }) { p ->
                 Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
                     Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(p.name, fontWeight = FontWeight.SemiBold)
-                            Text(money(p.price) + " • คงเหลือ " + qty(p.stock), style = MaterialTheme.typography.bodySmall)
+                            Text(money(p.price) + " • คงเหลือ " + qty(p.stock),
+                                style = MaterialTheme.typography.bodySmall)
                         }
-                        IconButton(enabled = p.stock > (cart[p.id] ?: 0.0), onClick = {
-                            cart[p.id] = (cart[p.id] ?: 0.0) + 1
-                        }) { Icon(Icons.Default.Add, "เพิ่ม") }
-                        Text(qty(cart[p.id] ?: 0.0))
                         IconButton(enabled = (cart[p.id] ?: 0.0) > 0, onClick = {
                             val n = (cart[p.id] ?: 0.0) - 1
                             if (n <= 0) cart.remove(p.id) else cart[p.id] = n
-                        }) { Icon(Icons.Default.Remove, "ลด") }
+                        }) { Icon(Icons.Default.Remove, "ลดจำนวน") }
+                        Text(qty(cart[p.id] ?: 0.0), modifier = Modifier.widthIn(min = 26.dp))
+                        IconButton(enabled = p.stock > (cart[p.id] ?: 0.0), onClick = {
+                            cart[p.id] = (cart[p.id] ?: 0.0) + 1
+                        }) { Icon(Icons.Default.Add, "เพิ่มจำนวน") }
                     }
                 }
             }
         }
-        Card(Modifier.fillMaxWidth().padding(vertical = 8.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
-            Column(Modifier.padding(14.dp)) {
+        Card(Modifier.fillMaxWidth().padding(vertical = 8.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White)) {
+            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(selected.sumOf { cart[it.id] ?: 0.0 }.toInt().toString() + " ชิ้น", Modifier.weight(1f))
+                    Text(selected.sumOf { cart[it.id] ?: 0.0 }.toInt().toString() + " ชิ้น",
+                        Modifier.weight(1f))
                     Text(money(total), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 }
                 Button(onClick = { paying = true }, enabled = selected.isNotEmpty() && !busy,
-                    modifier = Modifier.fillMaxWidth()) { Text("ชำระเงินสด") }
-                message?.let { Text(it, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall) }
+                    modifier = Modifier.fillMaxWidth()) {
+                    Text(if (busy) "กำลังบันทึก..." else "เลือกวิธีชำระเงิน")
+                }
+                message?.let { Text(it, color = MaterialTheme.colorScheme.primary,
+                    style = MaterialTheme.typography.bodySmall) }
             }
         }
     }
@@ -450,33 +482,32 @@ private fun PosScreen(
         scope.launch {
             try {
                 val lines = selected.map { it to (cart[it.id] ?: 0.0) }
+                val receiptLines = lines.joinToString("\n") { (p, q) -> "${p.name} x ${qty(q)} = ${money(p.price*q)}" }
                 val id = withContext(Dispatchers.IO) { repo.checkoutCash(orgId, lines, cash) }
                 cart.clear()
-                message = "บันทึกการขายสำเร็จ: " + id
+                receipt = "StoreFlow\nใบเสร็จรับเงิน\nเลขที่: $id\n\n$receiptLines\n\nยอดสุทธิ: ${money(total)}\nรับเงิน: ${money(cash)}\nเงินทอน: ${money(cash-total)}"
+                message = "ชำระเงินสำเร็จ"
                 onCompleted()
             } catch (e: Exception) { message = e.message ?: "ชำระเงินไม่สำเร็จ" }
             finally { busy = false }
         }
     })
-}
-
-@Composable
-private fun CashDialog(total: Double, onDismiss: () -> Unit, onPay: (Double) -> Unit) {
-    var received by remember { mutableStateOf(String.format(Locale.US, "%.2f", total)) }
-    var error by remember { mutableStateOf<String?>(null) }
-    val cash = received.toDoubleOrNull()
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("รับชำระเงินสด") },
-        text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("ยอดสุทธิ " + money(total), fontWeight = FontWeight.Bold)
-            OutlinedTextField(received, { received = it }, label = { Text("รับเงินมา") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
-            if (cash != null) Text("เงินทอน " + money((cash-total).coerceAtLeast(0.0)))
-            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-        } },
-        confirmButton = { TextButton(onClick = {
-            if (cash == null || cash < total) error = "รับเงินไม่ครบยอด" else onPay(cash)
-        }) { Text("ยืนยันการขาย") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("ยกเลิก") } })
+    receipt?.let { text ->
+        AlertDialog(
+            onDismissRequest = { receipt = null },
+            title = { Text("ชำระเงินสำเร็จ") },
+            text = { Text(text) },
+            confirmButton = {
+                TextButton(onClick = {
+                    val send = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"; putExtra(Intent.EXTRA_TEXT, text)
+                    }
+                    context.startActivity(Intent.createChooser(send, "แชร์ใบเสร็จ"))
+                }) { Text("แชร์ใบเสร็จ") }
+            },
+            dismissButton = { TextButton(onClick = { receipt = null }) { Text("ปิด") } }
+        )
+    }
 }
 
 
