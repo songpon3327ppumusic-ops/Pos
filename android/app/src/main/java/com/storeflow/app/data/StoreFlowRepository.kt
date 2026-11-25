@@ -131,6 +131,16 @@ data class AttendanceRecord(
 )
 
 
+
+@Serializable
+data class StoreSubscription(
+    val status: String,
+    @SerialName("plan_id") val planId: String,
+    @SerialName("trial_ends_at") val trialEndsAt: String? = null,
+    @SerialName("current_period_end") val currentPeriodEnd: String? = null,
+    @SerialName("plan_type") val planType: String = "subscription"
+)
+
 @Serializable
 data class StorePaymentSettings(
     @SerialName("organization_id") val organizationId: String,
@@ -304,6 +314,13 @@ class StoreFlowRepository(private val client: SupabaseClient) {
             filter { eq("id", employeeId) }
         }
     }
+
+
+    suspend fun subscription(organizationId: String): StoreSubscription? =
+        client.from("organization_subscriptions").select {
+            filter { eq("organization_id", organizationId) }
+            limit(1)
+        }.decodeList<StoreSubscription>().firstOrNull()
 
     suspend fun ownerInviteCode(): String =
         client.postgrest.rpc("get_store_invite_code").decodeAs<String>()
