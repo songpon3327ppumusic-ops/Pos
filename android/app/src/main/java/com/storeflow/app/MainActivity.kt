@@ -14,6 +14,9 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.PickVisualMediaRequest
+import com.storeflow.app.billing.StoreFlowBilling
+import android.app.Activity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
@@ -589,9 +592,12 @@ private fun PosScreen(
                         Modifier.weight(1f))
                     Text(money(total), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 }
-                Button(onClick = { paymentDialog = true }, enabled = selected.isNotEmpty() && !busy,
-                    modifier = Modifier.fillMaxWidth()) {
-                    Text(if (busy) "กำลังบันทึก..." else "เลือกวิธีชำระเงิน")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { cart.clear() }, enabled = selected.isNotEmpty() && !busy) { Text("ล้างตะกร้า") }
+                    Button(onClick = { paymentDialog = true }, enabled = selected.isNotEmpty() && !busy,
+                        modifier = Modifier.weight(1f)) {
+                        Text(if (busy) "กำลังบันทึก..." else "เลือกวิธีชำระเงิน")
+                    }
                 }
                 message?.let { Text(it, color = MaterialTheme.colorScheme.primary,
                     style = MaterialTheme.typography.bodySmall) }
@@ -739,16 +745,7 @@ private fun PromptPayCheckoutDialog(
     val qrBitmap = remember(settings?.promptpayId, total) {
         runCatching { settings?.promptpayId?.let { PromptPayQr.bitmap(PromptPayQr.payload(it, total)) } }.getOrNull()
     }
-    var storeQrBitmap by remember { mutableStateOf<Bitmap?>(null) }
-    LaunchedEffect(settings?.qrImagePath) {
-        storeQrBitmap = settings?.qrImagePath?.let { path ->
-            runCatching {
-                val bytes = withContext(Dispatchers.IO) { repo.downloadStoreQr(path) }
-                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-            }.getOrNull()
-        }
-    }
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri: Uri? ->
         if (uri != null) {
             scope.launch {
                 try {
@@ -787,13 +784,8 @@ private fun PromptPayCheckoutDialog(
                 Text(money(total), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
                 qrBitmap?.let { Image(it.asImageBitmap(), contentDescription = "PromptPay QR",
                     modifier = Modifier.fillMaxWidth().height(210.dp)) }
-                storeQrBitmap?.let {
-                    Text("QR ประจำร้าน")
-                    Image(it.asImageBitmap(), contentDescription = "QR ที่ร้านอัปโหลด",
-                        modifier = Modifier.fillMaxWidth().height(180.dp))
-                }
                 Text("ชื่อบัญชี: ${settings?.promptpayName ?: "-"}")
-                OutlinedButton(onClick = { picker.launch("image/*") }, enabled = !busy,
+                OutlinedButton(onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, enabled = !busy,
                     modifier = Modifier.fillMaxWidth()) { Text(if (slipBytes == null) "แนบรูปสลิปและอ่าน QR" else "เลือกสลิปใหม่") }
                 if (transactionRef.isNotBlank()) {
                     Text("อ่านรหัสอ้างอิงจาก QR แล้ว", color = MaterialTheme.colorScheme.primary)
@@ -1404,7 +1396,7 @@ private fun SettingsScreen(
                     OutlinedTextField(bankAccountNumber, { bankAccountNumber = it }, label = { Text("เลขบัญชี") },
                         enabled = canManage, singleLine = true, modifier = Modifier.fillMaxWidth())
                     if (canManage) {
-                        OutlinedButton(onClick = { qrPicker.launch("image/*") },
+                        OutlinedButton(onClick = { qrPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
                             enabled = !busy, modifier = Modifier.fillMaxWidth()) {
                             Text(if (settings.qrImagePath == null) "อัปโหลด QR ประจำร้าน" else "เปลี่ยนรูป QR ประจำร้าน")
                         }
@@ -1445,7 +1437,7 @@ private fun SettingsScreen(
                     Text("ทดลองใช้ฟรี 7 วัน")
                     Text("รายเดือน: เลือกตามแพ็กเกจ")
                     Text("ซื้อขาด: ฿2,590 (ราคาปกติ ฿3,990)")
-                    Text("การเปิดชำระแพ็กเกจต้องเชื่อมระบบชำระเงินและยืนยันคำสั่งซื้อก่อน จึงยังไม่เปลี่ยนสถานะสมาชิกจากหน้าจอนี้")
+
                 }
             }
         }
