@@ -3,6 +3,7 @@ package com.storeflow.app.data
 import com.storeflow.app.BuildConfig
 import io.github.jan.supabase.createSupabaseClient
 import io.github.jan.supabase.auth.Auth
+import io.github.jan.supabase.auth.FlowType
 import io.github.jan.supabase.postgrest.Postgrest
 import io.github.jan.supabase.realtime.Realtime
 import io.github.jan.supabase.storage.Storage
@@ -19,7 +20,7 @@ object StoreFlowSupabase {
             supabaseUrl = BuildConfig.SUPABASE_URL,
             supabaseKey = BuildConfig.SUPABASE_ANON_KEY
         ) {
-            install(Auth) { scheme = "storeflow"; host = "auth" }
+            install(Auth) { flowType = FlowType.PKCE; scheme = "storeflow"; host = "auth" }
             install(Postgrest)
             install(Realtime)
             install(Storage)
