@@ -65,6 +65,11 @@ This is a source/configuration/database security review of the StoreFlow reposit
 
 All database test transactions were rolled back; no test sale or test organization was retained.
 
+## Runtime log review (last 24 hours at audit time)
+
+- Auth audit logs showed 7 login events, token refresh/revoke events, and no recorded failed-login action in the sampled 24-hour window. This is not proof that credential attacks never occurred; it only describes the retained log window.
+- Six POST requests to `storeflow-pos-connect` returned HTTP 500 under the same authenticated owner account. The store's `stripe_connect_account_id` remains empty and Stripe flags remain disabled. These requests do not by themselves indicate intrusion; they indicate an unresolved Stripe Connect onboarding/API error. The underlying Stripe error is not recoverable from the retained edge access logs. Verify the platform's Stripe account country, Connect availability, requested capabilities, and secret mode before enabling Connect payments.
+
 ## Historical payment records requiring owner reconciliation
 
 Four existing sales were found with `payment_status = paid` and bank-transfer/PromptPay methods but no stored slip or transaction reference. They were marked `legacy_unverified` rather than silently treated as verified or automatically reversed. The owner must reconcile these four receipts against the actual bank statement before relying on the historical paid status.
