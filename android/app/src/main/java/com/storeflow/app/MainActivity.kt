@@ -110,48 +110,109 @@ private fun LoginScreen() {
     val scope = rememberCoroutineScope()
     var email by rememberSaveable { mutableStateOf("") }
     var password by rememberSaveable { mutableStateOf("") }
+    var storeName by rememberSaveable { mutableStateOf("") }
+    var inviteCode by rememberSaveable { mutableStateOf("") }
+    var mode by rememberSaveable { mutableStateOf("login") }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var info by remember { mutableStateOf<String?>(null) }
+
+    fun runAuth(action: suspend () -> Unit) {
+        scope.launch {
+            busy = true; error = null; info = null
+            try { action() }
+            catch (e: Exception) { error = e.message ?: "ดำเนินการไม่สำเร็จ" }
+            finally { busy = false }
+        }
+    }
+
     Box(Modifier.fillMaxSize().padding(22.dp), contentAlignment = Alignment.Center) {
         Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(26.dp),
             colors = CardDefaults.cardColors(containerColor = Color.White)) {
-            Column(Modifier.padding(22.dp)) {
+            Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("StoreFlow", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
                 Text("ระบบจัดการร้านค้า", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.height(24.dp))
-                Text("เข้าสู่ระบบ", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                OutlinedButton(onClick = { scope.launch {
-                    busy = true; error = null
-                    try { repo.signInWithGoogle() } catch (e: Exception) { error = e.message ?: "Google Login ไม่สำเร็จ" }
-                    finally { busy = false }
-                } }, enabled = !busy, modifier = Modifier.fillMaxWidth().height(50.dp)) {
-                    Icon(Icons.Default.AccountCircle, null); Spacer(Modifier.width(8.dp)); Text("เข้าสู่ระบบด้วย Google")
+                Text(
+                    when(mode) {
+                        "create" -> "สมัครเปิดร้านค้าใหม่"
+                        "join" -> "เข้าร่วมร้านด้วยรหัสเชิญ"
+                        else -> "เข้าสู่ระบบ"
+                    },
+                    style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold
+                )
+                if (mode == "login") {
+                    OutlinedButton(onClick = { runAuth { repo.signInWithGoogle() } },
+                        enabled = !busy, modifier = Modifier.fillMaxWidth().height(50.dp)) {
+                        Icon(Icons.Default.AccountCircle, null); Spacer(Modifier.width(8.dp)); Text("เข้าสู่ระบบด้วย Google")
+                    }
                 }
-                Spacer(Modifier.height(14.dp))
                 OutlinedTextField(email, { email = it }, label = { Text("อีเมล") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email), singleLine = true,
-                    modifier = Modifier.fillMaxWidth())
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(password, { password = it }, label = { Text("รหัสผ่าน") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                    singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(password, { password = it }, label = { Text("รหัสผ่าน (อย่างน้อย 8 ตัวอักษร)") },
                     visualTransformation = PasswordVisualTransformation(), singleLine = true,
                     modifier = Modifier.fillMaxWidth())
-                Spacer(Modifier.height(14.dp))
-                Button(onClick = { scope.launch {
-                    busy = true; error = null
-                    try { repo.signIn(email.trim(), password) }
-                    catch (e: Exception) { error = e.message ?: "เข้าสู่ระบบไม่สำเร็จ" }
-                    finally { busy = false }
-                } }, enabled = !busy && email.isNotBlank() && password.isNotBlank(),
-                    modifier = Modifier.fillMaxWidth().height(50.dp)) {
-                    Text(if (busy) "กำลังดำเนินการ..." else "เข้าสู่ระบบ")
+                if (mode == "create") {
+                    OutlinedTextField(storeName, { storeName = it }, label = { Text("ชื่อร้านค้า") },
+                        singleLine = true, modifier = Modifier.fillMaxWidth())
+                    Text("ทดลองใช้ฟรี 7 วัน จากนั้นเลือกแพ็กเกจที่ต้องการ",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall)
                 }
+                if (mode == "join") {
+                    OutlinedTextField(inviteCode, { inviteCode = it.uppercase() },
+                        label = { Text("รหัสเชิญจากเจ้าของร้าน") }, singleLine = true,
+                        modifier = Modifier.fillMaxWidth())
+                }
+                Button(
+                    onClick = {
+                        runAuth {
+                            when(mode) {
+                                "login" -> repo.signIn(email.trim(), password)
+                                "create" -> {
+                                    repo.signUp(email.trim(), password)
+                                    if (StoreFlowSupabase.client.auth.currentSessionOrNull() != null) {
+                                        repo.createStore(storeName)
+                                    } else {
+                                        info = "สมัครบัญชีแล้ว กรุณายืนยันอีเมล จากนั้นเข้าสู่ระบบเพื่อสร้างร้านค้า"
+                                    }
+                                }
+                                "join" -> {
+                                    repo.signUp(email.trim(), password)
+                                    if (StoreFlowSupabase.client.auth.currentSessionOrNull() != null) {
+                                        repo.joinStore(inviteCode)
+                                    } else {
+                                        info = "สมัครบัญชีแล้ว กรุณายืนยันอีเมล จากนั้นเข้าสู่ระบบและกรอกรหัสเชิญอีกครั้ง"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    enabled = !busy && email.contains("@") && password.length >= 8 &&
+                        (mode == "login" || (mode == "create" && storeName.isNotBlank()) ||
+                            (mode == "join" && inviteCode.isNotBlank())),
+                    modifier = Modifier.fillMaxWidth().height(50.dp)
+                ) { Text(if (busy) "กำลังดำเนินการ..." else when(mode) {
+                    "create" -> "สมัครและเปิดร้านค้า"
+                    "join" -> "สมัครและเข้าร่วมร้าน"
+                    else -> "เข้าสู่ระบบ"
+                }) }
+                if (mode != "login") {
+                    TextButton(onClick = { mode = "login"; error = null; info = null },
+                        modifier = Modifier.fillMaxWidth()) { Text("กลับไปเข้าสู่ระบบ") }
+                } else {
+                    TextButton(onClick = { mode = "create"; error = null; info = null },
+                        modifier = Modifier.fillMaxWidth()) { Text("สมัครเปิดร้านค้าใหม่ (ทดลองใช้ฟรี 7 วัน)") }
+                    TextButton(onClick = { mode = "join"; error = null; info = null },
+                        modifier = Modifier.fillMaxWidth()) { Text("เข้าร่วมร้านด้วยรหัสเชิญ") }
+                }
+                info?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                Text("บัญชีต้องได้รับคำเชิญหรืออนุมัติจากเจ้าของร้านก่อน",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
             }
         }
     }
 }
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
