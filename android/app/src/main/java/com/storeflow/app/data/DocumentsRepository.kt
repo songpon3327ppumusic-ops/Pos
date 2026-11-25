@@ -27,12 +27,32 @@ data class BusinessDocument(
     @SerialName("tax_mode") val taxMode: String = "exclude"
 )
 
+@Serializable
+data class StoreBusinessHeader(
+    @SerialName("display_name") val displayName: String? = null,
+    @SerialName("legal_name") val legalName: String? = null,
+    val address: String? = null,
+    @SerialName("tax_id") val taxId: String? = null,
+    @SerialName("branch_code") val branchCode: String? = null,
+    @SerialName("branch_name") val branchName: String? = null,
+    @SerialName("logo_path") val logoPath: String? = null
+)
+
 data class DocumentLine(
     val description: String, val quantity: Double, val unit: String = "รายการ",
     val unitPrice: Double, val discount: Double = 0.0, val productId: String? = null
 )
 
 class DocumentsRepository(private val client: SupabaseClient) {
+    suspend fun businessHeader(organizationId: String): StoreBusinessHeader? =
+        client.from("organization_business_settings").select {
+            filter { eq("organization_id", organizationId) }
+            limit(1)
+        }.decodeList<StoreBusinessHeader>().firstOrNull()
+
+    suspend fun downloadBusinessLogo(path: String): ByteArray =
+        client.storage.from("storeflow-store-assets").downloadAuthenticated(path)
+
     suspend fun list(organizationId: String): List<BusinessDocument> =
         client.from("business_documents").select {
             filter { eq("organization_id", organizationId) }
