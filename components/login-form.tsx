@@ -85,7 +85,7 @@ export default function LoginPage() {
       <h1 className="text-2xl font-extrabold">ตรวจสอบอีเมลของคุณ</h1>
       <p className="mt-3 text-sm leading-6 text-slate-600">สมัครสมาชิก StoreFlow สำเร็จแล้ว เราส่งลิงก์ยืนยันไปที่</p>
       <p className="mt-2 break-all font-semibold text-slate-900">{verificationEmail}</p>
-      <p className="mt-4 rounded-xl bg-emerald-50 p-4 text-left text-sm leading-6 text-emerald-900">กรุณาเปิดอีเมลจาก Supabase แล้วกดปุ่มยืนยันอีเมลก่อนเข้าสู่ระบบ หากไม่พบ ให้ตรวจสอบโฟลเดอร์ Spam หรือ Promotions ด้วย</p>
+      <p className="mt-4 rounded-xl bg-emerald-50 p-4 text-left text-sm leading-6 text-emerald-900">กรุณาเปิดอีเมลจาก Supabase แล้วกดปุ่มยืนยันอีเมลก่อนเข้าสู่ระบบ หากไม่พบ ให้ตรวจสอบโฟลเดอร์ Spam หรือ Promotions ด้วย</p>{signupRole==="cashier"&&<p className="mt-3 rounded-xl bg-amber-50 p-3 text-left text-sm leading-6 text-amber-800">หลังยืนยันอีเมลแล้ว คำขอเข้าร่วมร้านจะรอเจ้าของร้านอนุมัติก่อนเริ่มใช้งาน</p>}{signupRole==="owner"&&<p className="mt-3 text-left text-xs text-slate-500">หลังยืนยันอีเมล ระบบจะเปิดขั้นตอนสร้างร้านค้าและเริ่มทดลองใช้ฟรี 7 วัน</p>}
       {notice && <p role="status" className="mt-4 rounded-xl bg-emerald-50 p-3 text-sm text-emerald-700">{notice}</p>}
       {error && <p role="alert" className="mt-4 rounded-xl bg-rose-50 p-3 text-sm text-rose-700">{error}</p>}
       <button type="button" disabled={resendBusy || resendCooldown > 0} onClick={resendConfirmation} className="mt-5 w-full rounded-xl bg-emerald-600 py-3 font-semibold text-white disabled:opacity-50">{resendBusy ? "กำลังส่ง..." : resendCooldown > 0 ? `ส่งอีเมลอีกครั้งได้ใน ${resendCooldown} วินาที` : "ส่งอีเมลยืนยันอีกครั้ง"}</button>
