@@ -1,11 +1,30 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
-const cors={ "Access-Control-Allow-Origin":"https://songpon3327ppumusic-ops.github.io","Access-Control-Allow-Headers":"authorization, x-client-info, apikey, content-type","Access-Control-Allow-Methods":"POST, OPTIONS"};
-const json=(data:unknown,status=200)=>new Response(JSON.stringify(data),{status,headers:{...cors,"Content-Type":"application/json"}});
-Deno.serve(async(req)=>{if(req.method==="OPTIONS")return new Response("ok",{headers:cors});if(req.method!=="POST")return json({error:"Method not allowed"},405);try{
- const token=req.headers.get("Authorization")?.replace(/^Bearer\\s+/i,"");if(!token)return json({error:"Authentication required"},401);
- const url=Deno.env.get("SUPABASE_URL")!,anon=Deno.env.get("SUPABASE_ANON_KEY")!,service=Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,stripeKey=Deno.env.get("STRIPE_SECRET_KEY");if(!stripeKey)return json({error:"Billing is not configured"},503);
- const userClient=createClient(url,anon);const {data:{user},error}=await userClient.auth.getUser(token);if(error||!user)return json({error:"Invalid session"},401);
- const {organization_id}=await req.json();const admin=createClient(url,service);const {data:member}=await admin.from("organization_members").select("role,is_active").eq("organization_id",organization_id).eq("user_id",user.id).maybeSingle();if(!member?.is_active||!["owner","admin"].includes(member.role))return json({error:"Not authorized"},403);
- const {data:sub}=await admin.from("organization_subscriptions").select("stripe_customer_id").eq("organization_id",organization_id).single();if(!sub?.stripe_customer_id)return json({error:"No billing customer found"},404);
- const form=new URLSearchParams({customer:sub.stripe_customer_id,return_url:"https://songpon3327ppumusic-ops.github.io/Pos/"});const response=await fetch("https://api.stripe.com/v1/billing_portal/sessions",{method:"POST",headers:{Authorization:`Bearer ${stripeKey}`,"Content-Type":"application/x-www-form-urlencoded"},body:form});const session=await response.json();if(!response.ok)return json({error:session.error?.message??"Portal creation failed"},502);return json({url:session.url});
- }catch(e){return json({error:e instanceof Error?e.message:"Unexpected error"},500);}});
+const cors = { "Access-Control-Allow-Origin": "https://songpon3327ppumusic-ops.github.io", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
+const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: { ...cors, "Content-Type": "application/json", "Cache-Control": "no-store" } });
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
+  if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
+  try {
+    const token = req.headers.get("Authorization")?.replace(/^Bearer\s+/i, "");
+    if (!token) return json({ error: "Authentication required" }, 401);
+    const url = Deno.env.get("SUPABASE_URL")!;
+    const anon = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const service = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
+    if (!stripeKey) return json({ error: "Billing is not configured" }, 503);
+    const userClient = createClient(url, anon);
+    const { data: { user }, error } = await userClient.auth.getUser(token);
+    if (error || !user) return json({ error: "Invalid session" }, 401);
+    const { organization_id } = await req.json();
+    const admin = createClient(url, service);
+    const { data: member } = await admin.from("organization_members").select("role,is_active,membership_status").eq("organization_id", organization_id).eq("user_id", user.id).maybeSingle();
+    if (!member?.is_active || member.membership_status !== "active" || !["owner", "admin"].includes(member.role)) return json({ error: "Not authorized" }, 403);
+    const { data: sub } = await admin.from("organization_subscriptions").select("stripe_customer_id").eq("organization_id", organization_id).single();
+    if (!sub?.stripe_customer_id) return json({ error: "No billing customer found" }, 404);
+    const form = new URLSearchParams({ customer: sub.stripe_customer_id, return_url: "https://songpon3327ppumusic-ops.github.io/Pos/" });
+    const response = await fetch("https://api.stripe.com/v1/billing_portal/sessions", { method: "POST", headers: { Authorization: `Bearer ${stripeKey}`, "Content-Type": "application/x-www-form-urlencoded" }, body: form });
+    const session = await response.json();
+    if (!response.ok) return json({ error: session.error?.message ?? "Portal creation failed" }, 502);
+    return json({ url: session.url });
+  } catch (e) { return json({ error: e instanceof Error ? e.message : "Unexpected error" }, 500); }
+});
