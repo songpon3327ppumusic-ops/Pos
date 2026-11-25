@@ -285,8 +285,22 @@ class StoreFlowRepository(private val client: SupabaseClient) {
             promptpayId = settings.promptpayId?.filter { it.isDigit() }?.ifBlank { null },
             promptpayName = settings.promptpayName?.trim()?.ifBlank { null }
         )
+        val payload = buildJsonArray {
+            add(buildJsonObject {
+                put("organization_id", value.organizationId)
+                put("cash_enabled", value.cashEnabled)
+                put("promptpay_enabled", value.promptpayEnabled)
+                put("bank_transfer_enabled", value.bankTransferEnabled)
+                put("promptpay_id", value.promptpayId ?: JsonNull)
+                put("promptpay_name", value.promptpayName ?: JsonNull)
+                put("bank_name", value.bankName ?: JsonNull)
+                put("bank_account_name", value.bankAccountName ?: JsonNull)
+                put("bank_account_number", value.bankAccountNumber ?: JsonNull)
+                put("qr_image_path", value.qrImagePath ?: JsonNull)
+            })
+        }
         client.from("store_payment_settings").insert(
-            value.copy(),
+            payload,
             upsert = true,
             onConflict = "organization_id"
         )
