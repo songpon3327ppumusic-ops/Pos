@@ -211,9 +211,9 @@ export default function StoreApp(){
   const defaults:Record<string,{modules:string[];actions:string[]}>={
    manager:{modules:["dashboard","pos","orders","inventory","customers","employees","expenses","reports","audit"],actions:["read","create","update"]},
    cashier:{modules:["pos","orders","inventory"],actions:["read","create"]},
-   hr:{modules:["dashboard","employees","payroll","attendance","leave"],actions:["read","create","update"]},
+   hr:{modules:["dashboard","employees","payroll","attendance","shifts","leave"],actions:["read","create","update"]},
    accountant:{modules:["dashboard","reports","expenses","payroll","orders"],actions:["read","create","update","approve"]},
-   employee:{modules:["dashboard","attendance","leave","payroll"],actions:["read","create"]}
+   employee:{modules:["dashboard","attendance","shifts","leave","payroll"],actions:["read","create"]}
   };
   return (defaults[role]?.modules||[]).includes(module.toLowerCase())&&(defaults[role]?.actions||[]).includes(action);
  };
