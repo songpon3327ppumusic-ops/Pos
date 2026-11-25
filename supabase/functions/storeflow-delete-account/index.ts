@@ -69,16 +69,22 @@ Deno.serve(async (req: Request) => {
     for (const bucketName of buckets) {
       const bucket = admin.storage.from(bucketName);
       async function removeTree(prefix: string): Promise<void> {
-        const { data, error } = await bucket.list(prefix, { limit: 1000 });
-        if (error) throw error;
         const files: string[] = [];
-        for (const item of data ?? []) {
-          const path = prefix ? prefix + "/" + item.name : item.name;
-          if (item.id === null) await removeTree(path);
-          else files.push(path);
+        let offset = 0;
+        while (true) {
+          const { data, error } = await bucket.list(prefix, { limit: 1000, offset });
+          if (error) throw error;
+          const page = data ?? [];
+          for (const item of page) {
+            const path = prefix ? prefix + "/" + item.name : item.name;
+            if (item.id === null) await removeTree(path);
+            else files.push(path);
+          }
+          if (page.length < 1000) break;
+          offset += page.length;
         }
-        if (files.length) {
-          const { error: removeError } = await bucket.remove(files);
+        for (let index = 0; index < files.length; index += 1000) {
+          const { error: removeError } = await bucket.remove(files.slice(index, index + 1000));
           if (removeError) throw removeError;
         }
       }
