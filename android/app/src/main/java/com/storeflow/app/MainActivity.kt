@@ -188,9 +188,9 @@ private fun Workspace() {
         Column(Modifier.fillMaxSize().padding(22.dp), verticalArrangement = Arrangement.Center) {
             Text("เลือกร้านค้า", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
             stores.forEach { item ->
-                Card(Modifier.fillMaxWidth().padding(vertical = 5.dp), onClick = {
+                Card(onClick = {
                     store = item.first; role = item.second
-                }, colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                }, modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
                     Column(Modifier.padding(18.dp)) {
                         Text(item.first.name, fontWeight = FontWeight.Bold)
                         Text("สิทธิ์ " + item.second, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -297,7 +297,7 @@ private fun ProductsScreen(
         if (products.isEmpty()) EmptyCard("ยังไม่มีสินค้า", "เพิ่มสินค้าเพื่อเริ่มขายและจัดการสต็อก")
         else LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(products, key = { it.id }) { p ->
-                Card(Modifier.fillMaxWidth(), onClick = { if (canManage) selected = p },
+                Card(onClick = { if (canManage) selected = p }, modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = Color.White)) {
                     Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
