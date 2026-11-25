@@ -61,7 +61,6 @@ android {
 }
 
 dependencies {
-    // Keep Compose and lifecycle dependencies compatible with AGP 8.13 / compileSdk 36.
     val composeBom = platform("androidx.compose:compose-bom:2025.10.00")
     implementation(composeBom)
     androidTestImplementation(composeBom)
@@ -75,6 +74,7 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
     debugImplementation("androidx.compose.ui:ui-tooling")
+
     implementation(platform("io.github.jan-tennert.supabase:bom:3.5.0"))
     implementation("io.github.jan-tennert.supabase:auth-kt")
     implementation("io.github.jan-tennert.supabase:postgrest-kt")
@@ -83,5 +83,16 @@ dependencies {
     implementation("io.github.jan-tennert.supabase:functions-kt")
     implementation("io.ktor:ktor-client-android:3.0.3")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
+
+    // Google Play Billing; product IDs must match Play Console.
+    implementation("com.android.billingclient:billing-ktx:8.3.0")
+
+    // CameraX and on-device barcode scanning; CAMERA is requested only on scan action.
+    val cameraX = "1.5.1"
+    implementation("androidx.camera:camera-core:" + cameraX)
+    implementation("androidx.camera:camera-camera2:" + cameraX)
+    implementation("androidx.camera:camera-lifecycle:" + cameraX)
+    implementation("androidx.camera:camera-view:" + cameraX)
+    implementation("com.google.mlkit:barcode-scanning:17.3.0")
     implementation("com.google.zxing:core:3.5.3")
 }
