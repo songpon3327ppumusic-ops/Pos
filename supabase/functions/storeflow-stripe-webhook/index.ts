@@ -156,6 +156,23 @@ Deno.serve(async (req) => {
         const { data: plan, error: planError } = await admin.from("subscription_plans")
           .select("stripe_lifetime_price_id").eq("id", "lifetime").single();
         if (planError) throw planError;
+        if (!plan?.stripe_lifetime_price_id || object.currency !== "thb"
+          || !Number.isFinite(Number(object.amount_total)) || Number(object.amount_total) <= 0
+          || Number(object.amount_total) > Number(object.amount_subtotal)
+          || object.metadata?.billing_interval !== "lifetime") {
+          throw new Error("Lifetime checkout price, currency, or billing interval does not match the configured plan");
+        }
+        const [lineItems, configuredPrice] = await Promise.all([
+          stripeGet(`checkout/sessions/${encodeURIComponent(object.id)}/line_items?limit=10`, stripeSecret),
+          stripeGet(`prices/${encodeURIComponent(plan.stripe_lifetime_price_id)}`, stripeSecret),
+        ]);
+        if (!Array.isArray(lineItems.data) || lineItems.data.length !== 1
+          || lineItems.data[0]?.price?.id !== plan.stripe_lifetime_price_id
+          || Number(lineItems.data[0]?.quantity) !== 1
+          || configuredPrice.currency !== "thb" || configuredPrice.recurring
+          || Number(object.amount_subtotal) !== Number(configuredPrice.unit_amount)) {
+          throw new Error("Lifetime checkout line item does not match the configured StoreFlow price");
+        }
 
         const { data: current } = await admin.from("organization_subscriptions")
           .select("metadata").eq("organization_id", orgId).maybeSingle();
@@ -201,6 +218,20 @@ Deno.serve(async (req) => {
       const planId = subscription.metadata?.plan_id;
       if (orgId && planId) {
         const item = subscription.items?.data?.[0];
+        const billingInterval = subscription.metadata?.billing_interval ?? "month";
+        const { data: configuredPlan, error: configuredPlanError } = await admin.from("subscription_plans")
+          .select("stripe_monthly_price_id,stripe_yearly_price_id,monthly_price_thb,yearly_price_thb").eq("id", planId).eq("is_active", true).maybeSingle();
+        if (configuredPlanError) throw configuredPlanError;
+        const expectedPriceId = billingInterval === "year" ? configuredPlan?.stripe_yearly_price_id : configuredPlan?.stripe_monthly_price_id;
+        const expectedAmount = billingInterval === "year" ? configuredPlan?.yearly_price_thb : configuredPlan?.monthly_price_thb;
+        const expectedStripeInterval = billingInterval === "year" ? "year" : "month";
+        if (!configuredPlan || !["month", "year"].includes(billingInterval) || !item?.price?.id
+          || item.price.id !== expectedPriceId || item.price.currency !== "thb"
+          || Number(item.price.unit_amount) !== Number(expectedAmount) * 100
+          || item.price.recurring?.interval !== expectedStripeInterval
+          || Number(item.quantity ?? 1) !== 1) {
+          throw new Error("Subscription price does not match the configured StoreFlow plan");
+        }
         const status = subscription.status === "active" ? "active"
           : subscription.status === "trialing" ? "trialing"
           : subscription.status === "past_due" ? "past_due"
@@ -215,7 +246,7 @@ Deno.serve(async (req) => {
         };
         const { error } = await admin.from("organization_subscriptions").upsert({
           organization_id: orgId, plan_id: planId,
-          billing_interval: subscription.metadata?.billing_interval ?? "month",
+          billing_interval: billingInterval,
           status, plan_type: "subscription", stripe_customer_id: subscription.customer,
           stripe_subscription_id: subscription.id, stripe_price_id: item?.price?.id ?? null,
           current_period_start: subscription.current_period_start ? new Date(subscription.current_period_start * 1000).toISOString() : null,
