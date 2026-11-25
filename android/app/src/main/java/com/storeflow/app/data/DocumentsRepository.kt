@@ -61,6 +61,15 @@ class DocumentsRepository(private val client: SupabaseClient) {
             limit(100)
         }.decodeList()
 
+    suspend fun convertQuotation(organizationId: String, sourceDocumentId: String, targetType: String = "invoice"): String {
+        val params = buildJsonObject {
+            put("p_organization_id", organizationId)
+            put("p_source_document_id", sourceDocumentId)
+            put("p_target_type", targetType)
+        }
+        return client.postgrest.rpc("convert_storeflow_quotation", params).decodeAs<String>()
+    }
+
     suspend fun create(organizationId: String, type: String, partyName: String, partyTaxId: String,
         partyAddress: String, issueDate: String, dueDate: String?, lines: List<DocumentLine>,
         taxMode: String, taxRate: Double, notes: String, incomeType: String = "", withholdingRate: Double = 0.0): String {
