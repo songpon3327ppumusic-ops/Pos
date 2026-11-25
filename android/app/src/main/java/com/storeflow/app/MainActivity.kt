@@ -1,6 +1,12 @@
 package com.storeflow.app
 
 import android.content.Intent
+import android.content.Context
+import android.app.Activity
+import android.print.PrintManager
+import android.print.PrintAttributes
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
@@ -61,6 +67,26 @@ private fun formatThaiDateTime(value: String?): String {
         .getOrNull()
     return instant?.atZone(ZoneId.of("Asia/Bangkok"))?.format(ThaiDateTimeFormatter)
         ?: value.replace("T", " ").take(16)
+}
+
+
+private fun printStoreFlowReceipt(context: Context, receipt: String) {
+    val activity = context as? Activity ?: return
+    val webView = WebView(activity)
+    webView.settings.javaScriptEnabled = false
+    webView.webViewClient = object : WebViewClient() {
+        override fun onPageFinished(view: WebView, url: String?) {
+            val manager = activity.getSystemService(Context.PRINT_SERVICE) as PrintManager
+            val adapter = view.createPrintDocumentAdapter("StoreFlow-Receipt")
+            manager.print("StoreFlow ใบเสร็จ", adapter, PrintAttributes.Builder().build())
+        }
+    }
+    val escaped = receipt.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        .replace("\n", "<br>")
+    webView.loadDataWithBaseURL(null,
+        "<html><head><meta name='viewport' content='width=device-width,initial-scale=1'></head>" +
+            "<body style='font-family:sans-serif;padding:20px;font-size:14px'>$escaped</body></html>",
+        "text/HTML", "UTF-8", null)
 }
 
 private val Page = Color(0xFFF6F8FB)
@@ -641,12 +667,15 @@ private fun PosScreen(
             title = { Text("ใบเสร็จรับเงิน") },
             text = { Text(text) },
             confirmButton = {
-                TextButton(onClick = {
-                    val send = Intent(Intent.ACTION_SEND).apply {
-                        type = "text/plain"; putExtra(Intent.EXTRA_TEXT, text)
-                    }
-                    context.startActivity(Intent.createChooser(send, "แชร์ใบเสร็จ"))
-                }) { Text("แชร์ใบเสร็จ") }
+                Row {
+                    TextButton(onClick = { printStoreFlowReceipt(context, text) }) { Text("พิมพ์") }
+                    TextButton(onClick = {
+                        val send = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"; putExtra(Intent.EXTRA_TEXT, text)
+                        }
+                        context.startActivity(Intent.createChooser(send, "แชร์ใบเสร็จ"))
+                    }) { Text("แชร์ใบเสร็จ") }
+                }
             },
             dismissButton = { TextButton(onClick = { receipt = null }) { Text("ปิด") } }
         )
