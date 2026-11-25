@@ -89,7 +89,7 @@ export default function StoreApp(){
   setSales((results[3].data||[]) as Sale[]);
   setSaleItems((results[4].data||[]) as SaleItem[]);
   setExpenses((results[5].data||[]) as Expense[]);
-  setAudit(results[6].data||[]);setPayrollPeriods(results[7].data||[]);setPayrollItems(results[8].data||[]);setShifts(results[12].data||[]);setAttendance(results[13].data||[]);setPermissions(results[9].data||[]);setPlans(results[10].data||[]);setSubscription(results[11].data||null);
+  setAudit(results[6].data||[]);setPayrollPeriods(results[7].data||[]);setPayrollItems(results[8].data||[]);setShifts(results[9].data||[]);setAttendance(results[10].data||[]);setPermissions(results[11].data||[]);setPlans(results[12].data||[]);setSubscription(results[13].data||null);
  };
  useEffect(()=>{
   let active=true;
