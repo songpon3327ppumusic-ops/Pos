@@ -47,7 +47,13 @@ Deno.serve(async (req) => {
     const { data: { user }, error: authError } = await userClient.auth.getUser(token);
     if (authError || !user) return json({ error: "Invalid session" }, 401);
     const admin = createClient(url, service, { auth: { persistSession: false, autoRefreshToken: false } });
-    const body = await req.json();
+    const declaredLength = Number(req.headers.get("content-length") ?? "0");
+    if (Number.isFinite(declaredLength) && declaredLength > 16_384) return json({ error: "Request payload too large" }, 413);
+    const rawBody = await req.text();
+    if (new TextEncoder().encode(rawBody).byteLength > 16_384) return json({ error: "Request payload too large" }, 413);
+    let body: Record<string, unknown>;
+    try { body = JSON.parse(rawBody); } catch { return json({ error: "Invalid JSON body" }, 400); }
+    if (!body || typeof body !== "object" || Array.isArray(body)) return json({ error: "Invalid request body" }, 400);
     const action = String(body.action ?? "verify");
     const organizationId = String(body.organization_id ?? "");
     if (!/^[0-9a-f-]{36}$/i.test(organizationId)) return json({ error: "Invalid organization" }, 400);
@@ -66,6 +72,11 @@ Deno.serve(async (req) => {
     if (action === "configure") {
       if (member.role !== "owner") return json({ error: "Only the store owner can configure the slip provider" }, 403);
       if (!masterKey) return json({ error: "กรุณาตั้ง Supabase Function Secret SLIP_CREDENTIALS_ENCRYPTION_KEY (32 ตัวอักษร) ก่อนบันทึก API Key" }, 503);
+      const { data: allowed, error: limitError } = await admin.rpc("consume_storeflow_rate_limit", {
+        p_key: "slip-config:" + organizationId + ":" + user.id, p_window_seconds: 600, p_limit: 3,
+      });
+      if (limitError) throw limitError;
+      if (allowed !== true) return json({ error: "ตั้งค่า API Key บ่อยเกินไป กรุณารอ 10 นาทีแล้วลองใหม่" }, 429);
       const apiKey = String(body.api_key ?? "").trim();
       if (apiKey.length < 12 || apiKey.length > 512) return json({ error: "รูปแบบ API Key ไม่ถูกต้อง" }, 400);
       const encrypted = await encryptSecret(apiKey, masterKey);
@@ -80,6 +91,11 @@ Deno.serve(async (req) => {
 
     if (action !== "verify") return json({ error: "Unsupported action" }, 400);
     if (!["owner", "admin", "manager", "cashier"].includes(member.role)) return json({ error: "ไม่มีสิทธิ์ตรวจสอบสลิป" }, 403);
+    const { data: allowed, error: limitError } = await admin.rpc("consume_storeflow_rate_limit", {
+      p_key: "slip-verify:" + organizationId + ":" + user.id, p_window_seconds: 600, p_limit: 5,
+    });
+    if (limitError) throw limitError;
+    if (allowed !== true) return json({ error: "ตรวจสอบสลิปเกินจำนวนครั้งที่กำหนด กรุณารอ 10 นาทีแล้วลองใหม่" }, 429);
     if (!masterKey) return json({ error: "Slip verification encryption key is not configured" }, 503);
     const saleId = String(body.sale_id ?? "");
     const slipPath = String(body.slip_path ?? "");
@@ -115,6 +131,16 @@ Deno.serve(async (req) => {
     if (storedSlip.size > 4 * 1024 * 1024) return json({ error: "ไฟล์สลิปต้องไม่เกิน 4 MB" }, 413);
     const mime = storedSlip.type.toLowerCase();
     if (!["image/jpeg", "image/png", "image/webp"].includes(mime)) return json({ error: "ชนิดไฟล์สลิปไม่รองรับ" }, 415);
+    const signature = new Uint8Array(await storedSlip.slice(0, 12).arrayBuffer());
+    const isPng = mime === "image/png" && signature.length >= 8
+      && signature[0] === 0x89 && signature[1] === 0x50 && signature[2] === 0x4e && signature[3] === 0x47
+      && signature[4] === 0x0d && signature[5] === 0x0a && signature[6] === 0x1a && signature[7] === 0x0a;
+    const isJpeg = mime === "image/jpeg" && signature.length >= 3
+      && signature[0] === 0xff && signature[1] === 0xd8 && signature[2] === 0xff;
+    const isWebp = mime === "image/webp" && signature.length >= 12
+      && String.fromCharCode(...signature.slice(0, 4)) === "RIFF"
+      && String.fromCharCode(...signature.slice(8, 12)) === "WEBP";
+    if (!isPng && !isJpeg && !isWebp) return json({ error: "เนื้อหาไฟล์ไม่ตรงกับชนิดรูปภาพที่อนุญาต" }, 415);
 
     const { data: credential, error: credentialError } = await admin.from("store_slip_provider_credentials")
       .select("provider,encrypted_api_key,nonce").eq("organization_id", organizationId).maybeSingle();
@@ -176,8 +202,9 @@ Deno.serve(async (req) => {
       return json({ verified: false, rejected: true, message: "ข้อมูล QR จากรูปภาพไม่ตรงกับข้อมูลที่ตรวจสอบจากผู้ให้บริการ" }, 422);
     }
     const amount = Number(raw.amount?.amount ?? result.amountInSlip ?? 0);
+    const currency = String(raw.amount?.local?.currency ?? result.currency ?? "").toUpperCase();
     const amountMatched = result.isAmountMatched === true && Math.round(amount * 100) === Math.round(Number(sale.total) * 100);
-    if (!amountMatched || String(raw.amount?.local?.currency ?? "THB").toUpperCase() !== "THB") {
+    if (!amountMatched || currency !== "THB") {
       await admin.from("sales").update({ slip_url: slipPath, slip_path: slipPath, transaction_ref: serverRef,
         verification_status: "rejected", verification_provider: "easyslip",
         verification_response: { reason: "amount_mismatch", amount, expected: Number(sale.total) },
