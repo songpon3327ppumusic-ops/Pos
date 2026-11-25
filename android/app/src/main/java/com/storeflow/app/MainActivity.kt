@@ -9,6 +9,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.pdf.PdfDocument
 import android.net.Uri
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
@@ -565,6 +566,25 @@ private fun PosScreen(
     val cart = remember { mutableStateMapOf<String, Double>() }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val receiptSaveLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
+        if (uri != null) {
+            val receiptText = receipt
+            if (!receiptText.isNullOrBlank()) runCatching {
+                val pdf = PdfDocument()
+                val page = pdf.startPage(PdfDocument.PageInfo.Builder(595, 842, 1).create())
+                val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { textSize = 14f }
+                var y = 48f
+                receiptText.lines().take(48).forEach { line ->
+                    page.canvas.drawText(line.take(80), 40f, y, paint)
+                    y += 20f
+                }
+                pdf.finishPage(page)
+                context.contentResolver.openOutputStream(uri)?.use { pdf.writeTo(it) }
+                    ?: error("บันทึกไฟล์ PDF ไม่สำเร็จ")
+                pdf.close()
+            }.onFailure { message = it.message ?: "บันทึก PDF ไม่สำเร็จ" }
+        }
+    }
     var search by rememberSaveable { mutableStateOf("") }
     var paymentDialog by remember { mutableStateOf(false) }
     var cashDialog by remember { mutableStateOf(false) }
@@ -709,6 +729,7 @@ private fun PosScreen(
             text = { Text(text) },
             confirmButton = {
                 Row {
+                    TextButton(onClick = { receiptSaveLauncher.launch("StoreFlow-Receipt.pdf") }) { Text("บันทึก PDF") }
                     TextButton(onClick = { printStoreFlowReceipt(context, text) }) { Text("พิมพ์") }
                     TextButton(onClick = {
                         val send = Intent(Intent.ACTION_SEND).apply {
