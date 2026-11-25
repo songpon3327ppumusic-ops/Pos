@@ -47,8 +47,8 @@ export default function DocumentsManager({supabase,organizationId,role,notify,so
   if(!party.trim())throw new Error("กรุณากรอกชื่อผู้ซื้อ/คู่ค้า");
   const noItems=["receipt_voucher","payment_voucher","petty_cash_voucher","deposit_receipt","expense_certificate","purchase_requisition","withholding_certificate"];
   if(!noItems.includes(type)&&items.every(i=>!i.description.trim()))throw new Error("กรุณาเพิ่มรายการอย่างน้อย 1 รายการ");
-  if(taxId&&!/^\\d{13}$/.test(taxId))throw new Error("เลขประจำตัวผู้เสียภาษีคู่ค้าต้องมี 13 หลัก");
-  if(branchCode&&!/^\\d{5}$/.test(branchCode))throw new Error("รหัสสาขาต้องมี 5 หลัก");
+  if(taxId&&!/^\d{13}$/.test(taxId))throw new Error("เลขประจำตัวผู้เสียภาษีคู่ค้าต้องมี 13 หลัก");
+  if(branchCode&&!/^\d{5}$/.test(branchCode))throw new Error("รหัสสาขาต้องมี 5 หลัก");
   const metadata:any={tax_mode:taxMode,party_branch_code:branchCode,payment_terms_days:Number(paymentTerms)||0,valid_until:validUntil||null,transport_reference:transportRef||null,withholding_condition:withholdingCondition,delivery:{sender,receiver,checker}};
   if(["receipt_voucher","payment_voucher","petty_cash_voucher","deposit_receipt","expense_certificate"].includes(type))metadata.voucher={purpose:notes,payment_channel:settings.bank_name||"",payment_account:settings.bank_account_number||""};
   if(type==="withholding_certificate")metadata.withholding={income_type:incomeType,income_section:incomeSection,withholding_rate:Number(withholdingRate)||0,withholding_tax:withholdingCalc,payer_name:settings.legal_name||settings.display_name||"",payer_tax_id:settings.tax_id||"",payer_address:settings.address||"",payee_name:party,payee_tax_id:taxId,payee_address:address,paid_date:issueDate,withholding_condition:withholdingCondition};
