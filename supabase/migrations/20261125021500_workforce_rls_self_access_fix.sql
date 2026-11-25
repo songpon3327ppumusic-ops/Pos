@@ -1,6 +1,12 @@
 -- Workforce RLS correction: employee self-read is allowed without granting payroll writes.
 begin;
 drop policy if exists payroll_items_owner_write_guard on public.payroll_items;
+drop policy if exists payroll_items_owner_insert_guard on public.payroll_items;
+drop policy if exists payroll_items_owner_update_guard on public.payroll_items;
+drop policy if exists payroll_items_owner_delete_guard on public.payroll_items;
+drop policy if exists workforce_self_payroll_items_select on public.payroll_items;
+drop policy if exists workforce_self_attendance_select on public.attendance;
+drop policy if exists workforce_self_shifts_select on public.shifts;
 create policy payroll_items_owner_insert_guard on public.payroll_items as restrictive for insert to authenticated
 with check (exists(select 1 from public.organization_members m where m.organization_id=payroll_items.organization_id and m.user_id=(select auth.uid()) and m.is_active=true and m.membership_status='active' and m.role in ('owner','admin')));
 create policy payroll_items_owner_update_guard on public.payroll_items as restrictive for update to authenticated
