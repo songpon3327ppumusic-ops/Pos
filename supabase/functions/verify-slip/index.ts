@@ -121,7 +121,7 @@ Deno.serve(async (req) => {
     if (credentialError) throw credentialError;
     if (!credential) {
       const { error } = await admin.from("sales").update({
-        slip_url: slipPath, slip_path: slipPath, transaction_ref: clientRef || null,
+        slip_url: slipPath, slip_path: slipPath, transaction_ref: null,
         verification_status: "pending_review", verification_provider: null,
         verification_response: { reason: "provider_not_configured" },
       }).eq("id", saleId).eq("organization_id", organizationId).eq("payment_status", "pending");
@@ -149,7 +149,7 @@ Deno.serve(async (req) => {
       const retryable = providerResponse.status >= 500 || providerResponse.status === 429 || providerResponse.status === 401 || providerResponse.status === 403 || code === "QUOTA_EXCEEDED" || code === "SLIP_PENDING";
       if (retryable) {
         const { error } = await admin.from("sales").update({
-          slip_url: slipPath, slip_path: slipPath, transaction_ref: clientRef || null,
+          slip_url: slipPath, slip_path: slipPath, transaction_ref: null,
           verification_status: "pending_review", verification_provider: "easyslip",
           verification_response: { provider_status: providerResponse.status, provider_code: code, reason: "provider_unavailable" },
         }).eq("id", saleId).eq("organization_id", organizationId).eq("payment_status", "pending");
