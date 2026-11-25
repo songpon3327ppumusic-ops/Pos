@@ -146,7 +146,7 @@ Deno.serve(async (req) => {
     const providerBody = await providerResponse.json().catch(() => ({}));
     if (!providerResponse.ok || providerBody.success !== true) {
       const code = String(providerBody.error?.code ?? "");
-      const retryable = providerResponse.status >= 500 || providerResponse.status === 429 || providerResponse.status === 401 || providerResponse.status === 403 || code === "QUOTA_EXCEEDED";
+      const retryable = providerResponse.status >= 500 || providerResponse.status === 429 || providerResponse.status === 401 || providerResponse.status === 403 || code === "QUOTA_EXCEEDED" || code === "SLIP_PENDING";
       if (retryable) {
         const { error } = await admin.from("sales").update({
           slip_url: slipPath, slip_path: slipPath, transaction_ref: clientRef || null,
@@ -191,25 +191,38 @@ Deno.serve(async (req) => {
       }).eq("id", saleId).eq("organization_id", organizationId).eq("payment_status", "pending");
       return json({ verified: false, rejected: true, message: "บัญชีผู้รับเงินไม่ตรงกับบัญชีร้านที่ลงทะเบียนไว้ใน EasySlip" }, 422);
     }
-    const expectedAccount = digits(settings?.bank_account_number || settings?.promptpay_id);
+    const expectedBank = digits(settings?.bank_account_number);
+    const expectedPromptPay = digits(settings?.promptpay_id);
+    const expectedName = normalizeName(settings?.bank_account_name || settings?.promptpay_name);
     const matchedAccount = result.matchedAccount ?? {};
     const receiverAccount = raw.receiver?.account ?? {};
-    const actualCandidates = [matchedAccount.bankNumber, receiverAccount.bank?.account, receiverAccount.proxy?.account].filter(Boolean);
-    if (expectedAccount.length >= 4) {
-      const expectedLast4 = suffix(expectedAccount);
-      if (!actualCandidates.some((candidate: unknown) => suffix(candidate) === expectedLast4)) {
-        await admin.from("sales").update({ slip_url: slipPath, slip_path: slipPath, transaction_ref: serverRef,
-          verification_status: "rejected", verification_provider: "easyslip",
-          verification_response: { reason: "recipient_account_mismatch" },
-        }).eq("id", saleId).eq("organization_id", organizationId).eq("payment_status", "pending");
-        return json({ verified: false, rejected: true, message: "เลขบัญชีผู้รับในสลิปไม่ตรงกับบัญชีรับเงินของร้าน" }, 422);
-      }
-    } else {
+    const receiverBank = matchedAccount.bankNumber || receiverAccount.bank?.account || "";
+    const receiverProxy = receiverAccount.proxy?.account || "";
+    let recipientCheckAvailable = false;
+    let recipientMatched = false;
+    if (expectedBank.length >= 4) {
+      recipientCheckAvailable = digits(receiverBank).length >= 4;
+      recipientMatched = recipientCheckAvailable && suffix(receiverBank) === suffix(expectedBank);
+    } else if (expectedPromptPay.length >= 4 && digits(receiverProxy).length >= 4) {
+      recipientCheckAvailable = true;
+      recipientMatched = suffix(receiverProxy) === suffix(expectedPromptPay);
+    } else if (expectedName && normalizeName(matchedAccount.nameTh)) {
+      recipientCheckAvailable = true;
+      recipientMatched = expectedName === normalizeName(matchedAccount.nameTh);
+    }
+    if (!recipientCheckAvailable) {
       await admin.from("sales").update({ slip_url: slipPath, slip_path: slipPath, transaction_ref: serverRef,
         verification_status: "pending_review", verification_provider: "easyslip",
-        verification_response: { reason: "store_recipient_account_not_configured" },
+        verification_response: { reason: "store_recipient_details_insufficient" },
       }).eq("id", saleId).eq("organization_id", organizationId).eq("payment_status", "pending");
-      return json({ verified: false, pending_review: true, message: "กรุณาตั้งเลขบัญชีหรือพร้อมเพย์ของร้านก่อนเปิดการยืนยันอัตโนมัติ" }, 202);
+      return json({ verified: false, pending_review: true, message: "ข้อมูลบัญชีรับเงินของร้านยังไม่เพียงพอสำหรับยืนยันอัตโนมัติ กรุณาตั้งเลขบัญชีและชื่อบัญชี" }, 202);
+    }
+    if (!recipientMatched) {
+      await admin.from("sales").update({ slip_url: slipPath, slip_path: slipPath, transaction_ref: serverRef,
+        verification_status: "rejected", verification_provider: "easyslip",
+        verification_response: { reason: "recipient_account_mismatch" },
+      }).eq("id", saleId).eq("organization_id", organizationId).eq("payment_status", "pending");
+      return json({ verified: false, rejected: true, message: "บัญชีผู้รับเงินในสลิปไม่ตรงกับบัญชีรับเงินของร้าน" }, 422);
     }
     const transferAt = new Date(String(raw.date ?? ""));
     const ageMs = Date.now() - transferAt.getTime();
