@@ -314,7 +314,7 @@ export default function StoreApp(){
   if(!record?.id||!orgId)return;setBusy(true);
   try{
    let slipPath:string|null=null;
-   if(slipFile){if(!["image/png","image/jpeg","image/webp"].includes(slipFile.type)||slipFile.size>8*1024*1024)throw new Error("รองรับสลิป PNG/JPG/WEBP ไม่เกิน 8 MB");const ext=slipFile.type==="image/png"?"png":slipFile.type==="image/webp"?"webp":"jpg";slipPath=orgId+"/slips/"+record.id+"/"+crypto.randomUUID()+"."+ext;const {error:uploadError}=await supabase.storage.from("store-payment-assets").upload(slipPath,slipFile,{contentType:slipFile.type,upsert:false});if(uploadError)throw uploadError;}
+   if(slipFile){if(!["image/png","image/jpeg","image/webp"].includes(slipFile.type)||slipFile.size>5*1024*1024)throw new Error("รองรับสลิป PNG/JPG/WEBP ไม่เกิน 5 MB");const ext=slipFile.type==="image/png"?"png":slipFile.type==="image/webp"?"webp":"jpg";slipPath=orgId+"/slips/"+record.id+"/"+crypto.randomUUID()+"."+ext;const {error:uploadError}=await supabase.storage.from("store-payment-assets").upload(slipPath,slipFile,{contentType:slipFile.type,upsert:false});if(uploadError)throw uploadError;}
    const {error}=await supabase.rpc("confirm_pos_payment",{p_organization_id:orgId,p_sale_id:record.id,p_payment_ref:paymentRefInput||null,p_slip_path:slipPath});if(error)throw error;
    const {data:sale,error:saleError}=await supabase.from("sales").select("*").eq("id",record.id).eq("organization_id",orgId).single();if(saleError)throw saleError;
    setRecord(sale);setModal("receipt");setSlipFile(null);setPaymentRefInput("");await reload();notify("ยืนยันรับชำระแล้ว ออกใบเสร็จได้");
