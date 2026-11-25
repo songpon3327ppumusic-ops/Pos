@@ -1,5 +1,7 @@
 package com.storeflow.app.data
 
+import android.graphics.BitmapFactory
+
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.postgrest.from
@@ -341,9 +343,24 @@ class StoreFlowRepository(private val client: SupabaseClient) {
 
     suspend fun uploadStoreQr(organizationId: String, bytes: ByteArray): String {
         require(bytes.isNotEmpty() && bytes.size <= 6 * 1024 * 1024) { "ไฟล์ QR ต้องมีขนาดไม่เกิน 6 MB" }
-        val path = "$organizationId/qr/${UUID.randomUUID()}.jpg"
+        val mime = when {
+            bytes.size >= 3 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xD8.toByte() && bytes[2] == 0xFF.toByte() ->
+                "image/jpeg" to "jpg"
+            bytes.size >= 8 && bytes.copyOfRange(0, 8).contentEquals(
+                byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)
+            ) -> "image/png" to "png"
+            bytes.size >= 12 && String(bytes, 0, 4, Charsets.US_ASCII) == "RIFF" &&
+                String(bytes, 8, 4, Charsets.US_ASCII) == "WEBP" -> "image/webp" to "webp"
+            else -> error("รองรับเฉพาะรูป QR แบบ JPG, PNG หรือ WebP")
+        }
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        require(bounds.outWidth in 1..4096 && bounds.outHeight in 1..4096) {
+            "ขนาดรูป QR ไม่ถูกต้องหรือใหญ่เกินไป"
+        }
+        val path = "$organizationId/qr/${UUID.randomUUID()}.${mime.second}"
         client.storage.from("storeflow-store-assets").upload(path, bytes) {
-            contentType = io.ktor.http.ContentType.Image.JPEG
+            contentType = io.ktor.http.ContentType.parse(mime.first)
         }
         return path
     }
