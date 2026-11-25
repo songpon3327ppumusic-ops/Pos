@@ -222,14 +222,12 @@ private fun LoginScreen() {
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodySmall)
                 }
-                {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(checked = consentAccepted, onCheckedChange = { consentAccepted = it })
                         Text("ฉันยินยอมให้ประมวลผลข้อมูลส่วนบุคคล และยอมรับข้อกำหนดการใช้งานกับนโยบายความเป็นส่วนตัว", style = MaterialTheme.typography.bodySmall)
                     }
-                    TextButton(onClick = { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://benz-verse.com/storeflow-privacy")) ) } }) {
-                        Text("อ่านนโยบายความเป็นส่วนตัว")
-                    }
+                TextButton(onClick = { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://benz-verse.com/storeflow-privacy")) ) } }) {
+                    Text("อ่านนโยบายความเป็นส่วนตัว")
                 }
                 if (mode == "join") {
                     OutlinedTextField(inviteCode, { inviteCode = it.uppercase() },
