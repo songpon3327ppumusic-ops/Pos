@@ -308,6 +308,21 @@ export default function StoreApp(){
    else notify(e instanceof Error?e.message:"ทำรายการขายไม่สำเร็จ");
   }finally{setBusy(false);}
  };
+ const confirmPendingPayment=async()=>{
+  if(!record?.id||!orgId)return;setBusy(true);
+  try{
+   let slipPath:string|null=null;
+   if(slipFile){if(!["image/png","image/jpeg","image/webp"].includes(slipFile.type)||slipFile.size>8*1024*1024)throw new Error("รองรับสลิป PNG/JPG/WEBP ไม่เกิน 8 MB");const ext=slipFile.type==="image/png"?"png":slipFile.type==="image/webp"?"webp":"jpg";slipPath=orgId+"/slips/"+record.id+"/"+crypto.randomUUID()+"."+ext;const {error:uploadError}=await supabase.storage.from("store-payment-assets").upload(slipPath,slipFile,{contentType:slipFile.type,upsert:false});if(uploadError)throw uploadError;}
+   const {error}=await supabase.rpc("confirm_pos_payment",{p_organization_id:orgId,p_sale_id:record.id,p_payment_ref:paymentRefInput||null,p_slip_path:slipPath});if(error)throw error;
+   const {data:sale,error:saleError}=await supabase.from("sales").select("*").eq("id",record.id).eq("organization_id",orgId).single();if(saleError)throw saleError;
+   setRecord(sale);setModal("receipt");setSlipFile(null);setPaymentRefInput("");await reload();notify("ยืนยันรับชำระแล้ว ออกใบเสร็จได้");
+  }catch(e){notify(e instanceof Error?e.message:"ยืนยันการชำระเงินไม่สำเร็จ");}finally{setBusy(false);}
+ };
+ const receiveCustomerCredit=async()=>{
+  if(!record?.id||!orgId)return;setBusy(true);
+  try{const {error}=await supabase.rpc("record_customer_credit_payment",{p_organization_id:orgId,p_customer_id:record.id,p_amount:Number(creditPayAmount),p_payment_method:creditPayMethod,p_payment_ref:paymentRefInput||null});if(error)throw error;await reload();setModal(null);setCreditPayAmount("");setPaymentRefInput("");notify("บันทึกรับชำระหนี้แล้ว");}
+  catch(e){notify(e instanceof Error?e.message:"รับชำระหนี้ไม่สำเร็จ");}finally{setBusy(false);}
+ };
  const exportCsv=(name:string,rows:any[])=>{
   if(!rows.length){notify("ไม่มีข้อมูลสำหรับส่งออก");return;}
   const keys=Object.keys(rows[0]);const csv=[keys.join(","),...rows.map(r=>keys.map(k=>'"'+String(r[k]??"").replaceAll('"','""')+'"').join(","))].join("\n");
