@@ -117,8 +117,8 @@ export default function StoreApp(){
     setOrgId(membership.organization_id);setRole(membership.role as Role);
     const {data:org,error:orgError}=await supabase.from("organizations").select("name").eq("id",membership.organization_id).maybeSingle();
     if(orgError)throw orgError;
-    if(org?.name)setOrgName(org.name);if(membership.role==="owner"){const {data:code}=await supabase.rpc("get_store_invite_code");if(code)setInviteCode(String(code));}
-    localStorage.setItem("storeflow:session",JSON.stringify({userId:session.user.id,orgId:membership.organization_id,orgName:org?.name||"StoreFlow",role:membership.role}));
+    const {data:businessInfo,error:businessInfoError}=await supabase.from("organization_business_settings").select("display_name,legal_name").eq("organization_id",membership.organization_id).maybeSingle();if(businessInfoError)throw businessInfoError;const actualStoreName=businessInfo?.display_name?.trim()||businessInfo?.legal_name?.trim()||org?.name||"ยังไม่ได้ตั้งชื่อร้าน";setOrgName(actualStoreName);if(membership.role==="owner"){const {data:code}=await supabase.rpc("get_store_invite_code");if(code)setInviteCode(String(code));}
+    localStorage.setItem("storeflow:session",JSON.stringify({userId:session.user.id,orgId:membership.organization_id,orgName:actualStoreName,role:membership.role}));
     await reload(membership.organization_id);
     if(["owner","admin","hr"].includes(membership.role)){const {data:accounts,error:accountError}=await supabase.rpc("list_storeflow_employee_accounts",{p_organization_id:membership.organization_id});if(accountError)throw accountError;setEmployeeAccounts(accounts||[]);}
     if(membership.role==="owner"){const {data:pending}=await supabase.rpc("list_pending_store_members");setPendingStaff(pending||[]);}
