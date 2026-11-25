@@ -5,6 +5,7 @@ import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Order
+import io.github.jan.supabase.storage.storage
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonNull
@@ -422,6 +423,69 @@ class StoreFlowRepository(private val client: SupabaseClient) {
             todayOrders = sales.size,
             lowStockCount = productList.count { it.stock <= it.minStock }
         )
+    }
+
+
+    suspend fun createPosSaleWithPayment(
+        organizationId: String,
+        items: List<Pair<StoreProduct, Double>>,
+        paymentMethod: String,
+        cashReceived: Double? = null
+    ): String {
+        require(items.isNotEmpty()) { "ตะกร้าสินค้าว่าง" }
+        val params = buildJsonObject {
+            put("p_organization_id", organizationId)
+            put("p_items", buildJsonArray {
+                items.forEach { (product, quantity) ->
+                    add(buildJsonObject {
+                        put("product_id", product.id)
+                        put("quantity", quantity)
+                    })
+                }
+            })
+            put("p_payment_method", paymentMethod)
+            put("p_discount", 0)
+            put("p_tax", 0)
+            put("p_customer_id", JsonNull)
+            put("p_idempotency_key", UUID.randomUUID().toString())
+            if (cashReceived == null) put("p_cash_received", JsonNull) else put("p_cash_received", cashReceived)
+            put("p_amount_tendered", cashReceived ?: 0)
+            put("p_payment_ref", JsonNull)
+            put("p_slip_path", JsonNull)
+            put("p_card_approval_code", JsonNull)
+            put("p_card_last4", JsonNull)
+        }
+        return client.postgrest.rpc("create_pos_sale_with_payment", params).decodeAs<String>()
+    }
+
+    suspend fun uploadPosSlip(organizationId: String, saleId: String, bytes: ByteArray): String {
+        require(bytes.isNotEmpty() && bytes.size <= 6 * 1024 * 1024) { "ไฟล์สลิปต้องมีขนาดไม่เกิน 6 MB" }
+        val path = "$organizationId/slips/$saleId/slip.jpg"
+        client.storage.from("storeflow-pos-slips").upload(path, bytes) {
+            contentType = io.ktor.http.ContentType.Image.JPEG
+        }
+        return path
+    }
+
+    suspend fun attachPosSlip(organizationId: String, saleId: String, path: String, transactionRef: String) {
+        val params = buildJsonObject {
+            put("p_organization_id", organizationId)
+            put("p_sale_id", saleId)
+            put("p_slip_path", path)
+            put("p_transaction_ref", transactionRef)
+        }
+        client.postgrest.rpc("storeflow_attach_pos_slip", params)
+    }
+
+    suspend fun reviewPosSlip(organizationId: String, saleId: String, approve: Boolean, transactionRef: String, note: String) {
+        val params = buildJsonObject {
+            put("p_organization_id", organizationId)
+            put("p_sale_id", saleId)
+            put("p_approve", approve)
+            put("p_transaction_ref", transactionRef)
+            put("p_note", note)
+        }
+        client.postgrest.rpc("owner_review_pos_slip", params)
     }
 
     suspend fun checkoutCash(
