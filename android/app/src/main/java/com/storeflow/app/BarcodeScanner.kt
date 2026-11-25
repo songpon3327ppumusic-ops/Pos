@@ -28,7 +28,6 @@ import java.util.concurrent.Executors
 @Composable
 fun BarcodeScanButton(onBarcode: (String) -> Unit) {
     val context = LocalContext.current
-    val activity = context as? Activity
     var showRationale by remember { mutableStateOf(false) }
     var showScanner by remember { mutableStateOf(false) }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
