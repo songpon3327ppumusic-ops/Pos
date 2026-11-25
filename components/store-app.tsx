@@ -48,6 +48,7 @@ export default function StoreApp(){
  const [cart,setCart]=useState<{id:string;qty:number}[]>([]),[payment,setPayment]=useState("เงินสด"),[cashReceived,setCashReceived]=useState("0"),[discount,setDiscount]=useState("0"),[vat,setVat]=useState(false),[selectedCustomer,setSelectedCustomer]=useState("");
  const [stockDelta,setStockDelta]=useState(""),[stockNote,setStockNote]=useState("");
  const notify=(s:string)=>{setToast(s);window.setTimeout(()=>setToast(""),2600)};
+ useEffect(()=>()=>{if(productImagePreview.startsWith("blob:"))URL.revokeObjectURL(productImagePreview);},[productImagePreview]);
  const field="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100";
  const btn="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50";
  const reload=async(id=orgId)=>{
@@ -72,7 +73,10 @@ export default function StoreApp(){
   if(costResult.error)throw costResult.error;
   const costMap=new Map((costResult.data||[]).map((r:any)=>[r.product_id,Number(r.cost)||0]));
   const rawCatalog=((results[0].data||[]) as any[]).map(p=>({...p,cost:costMap.get(p.id)||0})) as Product[];
-  const catalog=await Promise.all(rawCatalog.map(async p=>{if(!p.image_path)return p;const {data}=await supabase.storage.from("store-assets").createSignedUrl(p.image_path,3600);return {...p,image_url:data?.signedUrl||null};}));
+  const imagePaths=rawCatalog.map(p=>p.image_path).filter((path):path is string=>Boolean(path));
+  const signedUrlMap=new Map<string,string>();
+  if(imagePaths.length){const {data}=await supabase.storage.from("store-assets").createSignedUrls(imagePaths,3600);for(const item of data||[])if(item.path&&item.signedUrl)signedUrlMap.set(item.path,item.signedUrl);}
+  const catalog=rawCatalog.map(p=>({...p,image_url:p.image_path?signedUrlMap.get(p.image_path)||null:null}));
   setProducts(catalog); void saveProductCatalog(id,catalog.map(p=>({...p,cost:0}))).catch(()=>{});
   if(role==="owner"){const {data:pending}=await supabase.rpc("list_pending_store_members");setPendingStaff(pending||[]);}
   setCustomers((results[1].data||[]) as Customer[]);
