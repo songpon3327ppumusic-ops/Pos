@@ -21,7 +21,7 @@ This is a source/configuration/database security review of the StoreFlow reposit
 - Revoked authenticated/anonymous execution of the internal owner slip-review implementation. The public RPC is now a narrow SECURITY DEFINER wrapper that requires an authenticated identity and delegates to the private implementation, which checks active owner membership and the target sale's organization.
 - Kept payment evidence and verification fields protected from direct client updates.
 - Retained a deferred database constraint trigger that rejects a bank-transfer/PromptPay sale reaching \`paid\` unless it has a slip path, a transaction reference, and \`verified\` or \`manual_verified\` status. The deferred trigger permits a trusted transaction to write the evidence and paid state atomically.
-- Added an atomic service-role-only rate-limit table and RPC for sensitive Edge Function actions.
+- Added an atomic service-role-only rate-limit table and RPC for sensitive Edge Function actions: slip verification 5/10 min, provider-key changes 3/10 min, SaaS Checkout 5/10 min, Billing Portal 10/10 min, Stripe Connect onboarding 3/10 min, and POS Stripe Checkout 5/10 min per store/user/sale scope.
 - Kept private operational tables without client policies and without authenticated/anonymous grants.
 
 ### 2. Slip-verification Edge Function
@@ -37,7 +37,7 @@ This is a source/configuration/database security review of the StoreFlow reposit
 
 - Continues to verify the Stripe signature against the raw body, enforce the timestamp tolerance, and reject test/live mode mismatches.
 - Lifetime Checkout now checks THB currency, non-zero discounted total, configured Stripe Price ID, quantity, and subtotal against the actual Stripe Price object before granting lifetime entitlement.
-- Subscription events now check the configured plan, billing interval, Price ID, THB currency, unit amount, recurring interval, and quantity before updating the store subscription.
+- Subscription events now check the configured plan, billing interval, Price ID, THB currency, unit amount, recurring interval, and quantity before updating the store subscription. Existing subscriptions can still process cancellation/payment-status events if a plan is later deactivated.
 - Entitlements continue to be granted only from signed webhook events, not from the browser return URL.
 
 ### 4. GitHub Actions and dependency hygiene
