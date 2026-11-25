@@ -471,8 +471,8 @@ private fun ProductsScreen(
             }
         }
     }
-    if (adding) ProductDialog(onDismiss = { adding = false }, onSave = { sku, name, category, price, min ->
-        repo.addProduct(orgId, sku, name, category, price, min)
+    if (adding) ProductDialog(onDismiss = { adding = false }, onSave = { sku, name, category, price, min, initial, barcode ->
+        repo.addProduct(orgId, sku, name, category, price, min, initial, barcode)
         adding = false
         onChanged()
     })
@@ -484,27 +484,30 @@ private fun ProductsScreen(
 }
 
 @Composable
-private fun ProductDialog(onDismiss: () -> Unit, onSave: suspend (String, String, String, Double, Double) -> Unit) {
+private fun ProductDialog(onDismiss: () -> Unit, onSave: suspend (String, String, String, Double, Double, Double, String) -> Unit) {
     val scope = rememberCoroutineScope()
     var sku by remember { mutableStateOf("") }; var name by remember { mutableStateOf("") }
     var category by remember { mutableStateOf("") }; var price by remember { mutableStateOf("") }
-    var minimum by remember { mutableStateOf("0") }; var busy by remember { mutableStateOf(false) }
+    var minimum by remember { mutableStateOf("0") }; var initial by remember { mutableStateOf("0") }
+    var barcode by remember { mutableStateOf("") }; var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     AlertDialog(onDismissRequest = onDismiss, title = { Text("เพิ่มสินค้า") },
         text = { Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
             OutlinedTextField(sku, { sku = it }, label = { Text("SKU") }, singleLine = true)
+            OutlinedTextField(barcode, { barcode = it.filter(Char::isDigit) }, label = { Text("บาร์โค้ด") }, singleLine = true)
             OutlinedTextField(name, { name = it }, label = { Text("ชื่อสินค้า") }, singleLine = true)
             OutlinedTextField(category, { category = it }, label = { Text("หมวดหมู่") }, singleLine = true)
             OutlinedTextField(price, { price = it }, label = { Text("ราคาขาย") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
+            OutlinedTextField(initial, { initial = it }, label = { Text("จำนวนสต็อกตั้งต้น") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
             OutlinedTextField(minimum, { minimum = it }, label = { Text("แจ้งเตือนสต็อกต่ำกว่า") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         } },
         confirmButton = { TextButton(enabled = !busy, onClick = {
-            val p = price.toDoubleOrNull(); val m = minimum.toDoubleOrNull()
-            if (sku.isBlank() || name.isBlank() || p == null || m == null || p < 0 || m < 0) error = "กรอกข้อมูลและตัวเลขให้ถูกต้อง"
+            val p = price.toDoubleOrNull(); val m = minimum.toDoubleOrNull(); val opening = initial.toDoubleOrNull()
+            if (sku.isBlank() || name.isBlank() || p == null || m == null || opening == null || p < 0 || m < 0 || opening < 0) error = "กรอกข้อมูลและตัวเลขให้ถูกต้อง"
             else scope.launch {
                 busy = true
-                try { onSave(sku, name, category, p, m) }
+                try { onSave(sku, name, category, p, m, opening, barcode) }
                 catch (e: Exception) { error = e.message ?: "บันทึกไม่สำเร็จ" }
                 finally { busy = false }
             }
