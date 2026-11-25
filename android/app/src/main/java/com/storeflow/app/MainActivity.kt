@@ -566,6 +566,8 @@ private fun PosScreen(
     val cart = remember { mutableStateMapOf<String, Double>() }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    var message by remember { mutableStateOf<String?>(null) }
+    var receipt by remember { mutableStateOf<String?>(null) }
     val receiptSaveLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
         if (uri != null) {
             val receiptText = receipt
@@ -590,8 +592,6 @@ private fun PosScreen(
     var cashDialog by remember { mutableStateOf(false) }
     var promptPayDialog by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
-    var message by remember { mutableStateOf<String?>(null) }
-    var receipt by remember { mutableStateOf<String?>(null) }
     var paymentSettings by remember(orgId) { mutableStateOf<StorePaymentSettings?>(null) }
     val selected = products.filter { (cart[it.id] ?: 0.0) > 0 }
     val total = selected.sumOf { it.price * (cart[it.id] ?: 0.0) }
