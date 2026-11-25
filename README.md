@@ -54,3 +54,19 @@ All three functions validate the authenticated user and explicitly revoke execut
 
 ### Migration and statutory-document notes
 Apply the migration files under `supabase/migrations` in version order. The document compatibility views are aliases over the existing organization-scoped tables; they intentionally avoid duplicating records. The 50 Tawi layout is a print template, not a certified Revenue Department e-filing form; confirm statutory wording, rates, and required fields with the Revenue Department/accountant before issuing official certificates.
+
+## Store payment and POS checkout
+- Per-store `store_payment_settings` keyed by `organization_id` (the current StoreFlow store/tenant key), with owner-only write RLS and member read access.
+- Dynamic EMVCo PromptPay QR payload with the invoice amount, or private uploaded bank QR image; bank transfer account display and slip upload in the private `store-payment-assets` bucket.
+- Cash checkout with tendered amount and change, EDC approval code / last four digits, and customer credit ledger with partial settlement.
+- QR / bank transfer sales remain `pending` until a cashier explicitly verifies the actual bank credit and confirms payment. A QR image or uploaded slip alone is never treated as bank confirmation.
+- Stripe Connect onboarding and direct-charge Checkout use server-side Edge Functions; the existing signed Stripe webhook updates POS sales to paid. The Stripe option stays hidden until the connected account can accept charges and a Connect webhook endpoint is detected.
+- The existing subscription Stripe webhook now also handles connected-account POS Checkout events. Configure the same endpoint to listen to connected-account events: `https://tjunaxajcxwxirneopar.supabase.co/functions/v1/storeflow-stripe-webhook`.
+- Daily reports separate paid cash, PromptPay, bank transfer, EDC and unpaid customer-credit totals.
+- Omise/Opn remains disabled until a secure merchant-key onboarding and webhook integration is configured; no secret API keys are stored in browser-readable settings.
+
+### Payment setup notes
+1. Owner opens **ตั้งค่า → ช่องทางรับชำระเงิน**, enables the desired channels, and saves.
+2. For dynamic PromptPay, enter a 10-digit mobile PromptPay ID or 13-digit national/tax ID. For static QR, upload the bank QR image.
+3. For Stripe, complete Connect onboarding, configure the webhook endpoint for connected-account events, then use **ตรวจสอบสถานะ**. Enable Stripe checkout only after charges and webhook verification are both true.
+4. EDC approval codes are cashier-entered references from the physical terminal; they are not automatically verified by the POS.
