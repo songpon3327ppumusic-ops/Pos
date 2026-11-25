@@ -16,7 +16,7 @@ type Employee = { id:string; employee_code:string; full_name:string; position:st
 type Sale = { id:string; receipt_no:string; customer_id:string|null; subtotal:number; discount:number; tax:number; total:number; payment_method:string; payment_status?:string; amount_tendered?:number; change_amount?:number; payment_ref?:string|null; slip_path?:string|null; card_approval_code?:string|null; card_last4?:string|null; status:string; created_at:string };
 type Expense = { id:string; title:string; category:string; amount:number; expense_date:string; payment_status:string };
 type SaleItem = { sale_id:string; quantity:number; unit_price:number; unit_cost:number; line_total:number };
-const bangkokDate=()=>new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Bangkok",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
+const bangkokDate=(value?:string)=>new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Bangkok",year:"numeric",month:"2-digit",day:"2-digit"}).format(value?new Date(value):new Date());
 const money=(n:number)=>new Intl.NumberFormat("th-TH",{style:"currency",currency:"THB",maximumFractionDigits:2}).format(n||0);
 const dateText=(v:string)=>new Date(v).toLocaleString("th-TH",{dateStyle:"medium",timeStyle:"short"});
 const nav:{id:Page;label:string;icon:any;group:string;roles:Role[]}[]=[
