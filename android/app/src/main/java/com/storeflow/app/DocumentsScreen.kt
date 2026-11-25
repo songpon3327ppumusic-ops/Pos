@@ -3,6 +3,9 @@ package com.storeflow.app
 import android.content.Context
 import android.content.Intent
 import android.graphics.Paint
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Rect
 import android.graphics.pdf.PdfDocument
 import androidx.core.content.FileProvider
 import androidx.compose.foundation.clickable
@@ -25,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import com.storeflow.app.data.BusinessDocument
 import com.storeflow.app.data.DocumentLine
 import com.storeflow.app.data.DocumentsRepository
+import com.storeflow.app.data.StoreBusinessHeader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -48,13 +52,25 @@ fun DocumentsScreen(modifier: Modifier, organizationId: String, repository: Docu
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var documents by remember { mutableStateOf(emptyList<BusinessDocument>()) }
+    var businessHeader by remember { mutableStateOf<StoreBusinessHeader?>(null) }
+    var logoBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var loading by remember { mutableStateOf(true) }
     var creating by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf<BusinessDocument?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     suspend fun refresh() {
         loading = true
-        try { documents = withContext(Dispatchers.IO) { repository.list(organizationId) }; error = null }
+        try {
+            documents = withContext(Dispatchers.IO) { repository.list(organizationId) }
+            businessHeader = withContext(Dispatchers.IO) { repository.businessHeader(organizationId) }
+            logoBitmap = businessHeader?.logoPath?.let { path ->
+                runCatching {
+                    val bytes = withContext(Dispatchers.IO) { repository.downloadBusinessLogo(path) }
+                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                }.getOrNull()
+            }
+            error = null
+        }
         catch (e: Exception) { error = e.message ?: "โหลดเอกสารไม่สำเร็จ" }
         finally { loading = false }
     }
@@ -110,7 +126,7 @@ fun DocumentsScreen(modifier: Modifier, organizationId: String, repository: Docu
                 TextButton(onClick = {
                     scope.launch {
                         try {
-                            val file = withContext(Dispatchers.IO) { writeDocumentPdf(context, doc) }
+                            val file = withContext(Dispatchers.IO) { writeDocumentPdf(context, doc, businessHeader, logoBitmap) }
                             val uri = FileProvider.getUriForFile(context, context.packageName + ".files", file)
                             val send = Intent(Intent.ACTION_SEND).apply { type = "application/pdf"; putExtra(Intent.EXTRA_STREAM, uri); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION) }
                             context.startActivity(Intent.createChooser(send, "แชร์ PDF / พิมพ์เอกสาร"))
@@ -173,19 +189,28 @@ private fun DocumentForm(
     )
 }
 
-private fun writeDocumentPdf(context: Context, doc: BusinessDocument): File {
+private fun writeDocumentPdf(context: Context, doc: BusinessDocument, header: StoreBusinessHeader?, logo: Bitmap?): File {
     val pdf = PdfDocument()
     val page = pdf.startPage(PdfDocument.PageInfo.Builder(595, 842, 1).create())
     val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 14f }
+    logo?.let { bitmap ->
+        val target = Rect(42, 28, 112, 98)
+        page.canvas.drawBitmap(bitmap, null, target, paint)
+    }
+    val storeName = header?.displayName?.takeIf { it.isNotBlank() }
+        ?: header?.legalName?.takeIf { it.isNotBlank() } ?: "StoreFlow"
     val rows = listOf(
-        "เอกสารร้านค้า StoreFlow", documentTitle(doc.documentType), "เลขที่: " + doc.documentNo,
+        storeName, header?.address?.takeIf { it.isNotBlank() } ?: "",
+        "เลขผู้เสียภาษีร้าน: " + (header?.taxId ?: "-"),
+        "สาขา: " + (header?.branchName ?: "สำนักงานใหญ่") + " (" + (header?.branchCode ?: "00000") + ")",
+        documentTitle(doc.documentType), "เลขที่: " + doc.documentNo,
         "วันที่: " + doc.issueDate, "ลูกค้า/คู่ค้า: " + (doc.partyName ?: "-"),
-        "เลขผู้เสียภาษี: " + (doc.partyTaxId ?: "-"),
+        "เลขผู้เสียภาษีลูกค้า: " + (doc.partyTaxId ?: "-"),
         "ยอดก่อนภาษี: " + documentCurrency.format(doc.subtotal),
         "ภาษี: " + documentCurrency.format(doc.taxAmount),
         "ยอดสุทธิ: " + documentCurrency.format(doc.total), "หมายเหตุ: " + (doc.notes ?: "-")
     )
-    var y = 60f
+    var y = if (logo == null) 60f else 112f
     rows.forEachIndexed { index, row ->
         paint.textSize = if (index < 2 || index == 8) 18f else 13f
         paint.isFakeBoldText = index < 2 || index == 8
