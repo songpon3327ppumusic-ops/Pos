@@ -450,6 +450,7 @@ private fun Dashboard(modifier: Modifier, storeName: String, metrics: StoreMetri
             Metric("บิลวันนี้", metrics.todayOrders.toString(), Modifier.weight(1f))
             Metric("สินค้าใกล้หมด", metrics.lowStockCount.toString(), Modifier.weight(1f))
         } }
+        item { LowStockNotificationPrompt(metrics.lowStockCount) }
         error?.let { msg -> item { Text(msg, color = MaterialTheme.colorScheme.error) } }
     }
 }
