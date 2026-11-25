@@ -31,12 +31,12 @@ The current grants were revoked and verified. Additional hardening was applied t
 **Fix applied**
 - Revoked all direct table privileges from `anon` in the public schema.
 - Restored only `SELECT` on `public.subscription_plans`, which is intentionally public.
-- Revoked `TRUNCATE`, `REFERENCES`, and `TRIGGER` from `PUBLIC`, `anon`, and `authenticated` on all existing public tables.
+- Revoked `TRUNCATE`, `REFERENCES`, `TRIGGER`, and unnecessary PostgreSQL 17 `MAINTAIN` privileges from `PUBLIC`, `anon`, and `authenticated` on all existing public tables.
 - Revoked anonymous sequence access.
 - Added default-privilege revocations for objects created by role `postgres`.
 
 **Verification**
-- Zero remaining `TRUNCATE`, `REFERENCES`, or `TRIGGER` grants for `anon` / `authenticated` in public.
+- Zero remaining `TRUNCATE`, `REFERENCES`, `TRIGGER`, or `MAINTAIN` grants for `anon` / `authenticated` in public.
 - `anon` has only `SELECT` on `subscription_plans`.
 - No public security-definer function is executable by `anon`.
 
@@ -124,7 +124,7 @@ Other reviewed security-definer RPCs were checked for their own authorization mo
 |---|---|
 | RLS on all inspected public/private tables | Pass — no tables without RLS |
 | Anonymous public-table grants | Pass — subscription plan read only |
-| Dangerous table privileges | Pass — none remain for anon/authenticated |
+| Dangerous table privileges | Pass — no TRUNCATE / REFERENCES / TRIGGER / MAINTAIN remain for anon/authenticated |
 | Anonymous SECURITY DEFINER execution | Pass — none found |
 | Public views | Pass — all inspected views use `security_invoker=true` |
 | Payment Storage bucket | Pass — private |
