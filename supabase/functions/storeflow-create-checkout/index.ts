@@ -17,6 +17,8 @@ Deno.serve(async (req) => {
   const admin=createClient(url,service);
   const {data:member}=await admin.from("organization_members").select("role,is_active,membership_status").eq("organization_id",organization_id).eq("user_id",user.id).maybeSingle();
   if(!member?.is_active||member.membership_status!=="active"||!["owner","admin"].includes(member.role)) return json({error:"Only the store owner or admin can manage billing"},403);
+  const {data:allowed,error:limitError}=await admin.rpc("consume_storeflow_rate_limit",{p_key:"billing-checkout:"+organization_id+":"+user.id,p_window_seconds:600,p_limit:5});
+  if(limitError)throw limitError;if(allowed!==true)return json({error:"มีการสร้าง Checkout บ่อยเกินไป กรุณารอ 10 นาที"},429);
   const {data:plan}=await admin.from("subscription_plans").select("*").eq("id",plan_id).eq("is_active",true).single();
   const priceId=plan_id==="lifetime"?plan?.stripe_lifetime_price_id:billing_interval==="year"?plan?.stripe_yearly_price_id:plan?.stripe_monthly_price_id;
   if(!plan||!priceId) return json({error:"This plan is not ready for checkout yet"},409);
