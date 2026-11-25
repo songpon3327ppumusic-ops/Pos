@@ -19,7 +19,7 @@ object StoreFlowSupabase {
             supabaseUrl = BuildConfig.SUPABASE_URL,
             supabaseKey = BuildConfig.SUPABASE_ANON_KEY
         ) {
-            install(Auth)
+            install(Auth) { scheme = "storeflow"; host = "auth" }
             install(Postgrest)
             install(Realtime)
             install(Storage)
