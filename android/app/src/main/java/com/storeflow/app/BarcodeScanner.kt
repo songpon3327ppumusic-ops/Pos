@@ -19,7 +19,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.google.mlkit.vision.barcode.BarcodeScanning
@@ -38,8 +37,7 @@ fun BarcodeScanButton(onBarcode: (String) -> Unit) {
     IconButton(onClick = {
         val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
         if (granted) showScanner = true
-        else if (activity != null && ActivityCompat.shouldShowRequestPermissionRationale(activity, Manifest.permission.CAMERA)) showRationale = true
-        else permissionLauncher.launch(Manifest.permission.CAMERA)
+        else showRationale = true
     }) { Icon(Icons.Default.QrCodeScanner, contentDescription = "สแกนบาร์โค้ด") }
     if (showRationale) AlertDialog(
         onDismissRequest = { showRationale = false },
