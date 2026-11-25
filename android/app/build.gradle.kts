@@ -62,9 +62,9 @@ android {
 
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2025.10.00")
-    implementation(composeBom)
-    androidTestImplementation(composeBom)
-    implementation("androidx.core:core-ktx:1.17.0")
+    implementation(enforcedPlatform("androidx.compose:compose-bom:2025.10.00"))
+    androidTestImplementation(enforcedPlatform("androidx.compose:compose-bom:2025.10.00"))
+    // Keep AndroidX Compose artifacts aligned with AGP 8.13 / compileSdk 36.\n    configurations.configureEach {\n        resolutionStrategy.eachDependency {\n            if (requested.group in setOf("androidx.compose.ui", "androidx.compose.animation", "androidx.compose.foundation", "androidx.compose.runtime", "androidx.compose.material")) {\n                useVersion("1.9.3")\n                because("Compose 1.12.x requires AGP 9.1 and compileSdk 37; this project intentionally targets AGP 8.13 / SDK 36")\n            }\n        }\n    }\n\n    implementation("androidx.core:core-ktx:1.17.0")
     implementation("androidx.activity:activity-compose:1.10.1")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.4")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.4")
