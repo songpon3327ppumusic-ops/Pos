@@ -1374,7 +1374,7 @@ private fun SettingsScreen(
             finally { busy = false }
         }
     }
-    val qrPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+    val qrPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri: Uri? ->
         if (uri != null) scope.launch {
             busy = true; error = null
             try {
