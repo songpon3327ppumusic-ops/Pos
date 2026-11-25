@@ -28,4 +28,20 @@ create index if not exists attendance_shift_id_idx on public.attendance(shift_id
 create index if not exists employees_user_id_idx on public.employees(user_id);
 create index if not exists shifts_employee_id_idx on public.shifts(employee_id);
 create index if not exists payroll_items_employee_id_idx on public.payroll_items(employee_id);
+do $fix$
+declare v_definition text;
+begin
+ v_definition:=pg_get_functiondef('public.create_storeflow_payroll(uuid,date,date,date)'::regprocedure);
+ v_definition:=replace(v_definition,'coalesce(e.wage_rate,e.base_salary,0)','coalesce(nullif(e.wage_rate,0),e.base_salary,0)');
+ execute v_definition;
+end $fix$;
+alter table public.employees
+ add constraint employees_wage_rate_nonnegative check (wage_rate >= 0) not valid,
+ add constraint employees_position_allowance_nonnegative check (position_allowance >= 0) not valid,
+ add constraint employees_regular_allowance_nonnegative check (regular_allowance >= 0) not valid,
+ add constraint employees_overtime_rate_nonnegative check (overtime_hourly_rate >= 0) not valid;
+alter table public.employees validate constraint employees_wage_rate_nonnegative;
+alter table public.employees validate constraint employees_position_allowance_nonnegative;
+alter table public.employees validate constraint employees_regular_allowance_nonnegative;
+alter table public.employees validate constraint employees_overtime_rate_nonnegative;
 commit;
