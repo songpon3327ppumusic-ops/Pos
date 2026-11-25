@@ -350,6 +350,9 @@ class StoreFlowRepository(private val client: SupabaseClient) {
         return client.postgrest.rpc("storeflow_import_json", params).decodeAs<JsonElement>().toString()
     }
 
+    suspend fun downloadStoreQr(path: String): ByteArray =
+        client.storage.from("storeflow-store-assets").downloadAuthenticated(path)
+
     suspend fun uploadStoreQr(organizationId: String, bytes: ByteArray): String {
         require(bytes.isNotEmpty() && bytes.size <= 6 * 1024 * 1024) { "ไฟล์ QR ต้องมีขนาดไม่เกิน 6 MB" }
         val path = "$organizationId/qr/${UUID.randomUUID()}.jpg"
