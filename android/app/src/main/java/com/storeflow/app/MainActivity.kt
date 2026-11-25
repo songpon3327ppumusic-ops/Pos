@@ -7,6 +7,7 @@ import android.print.PrintManager
 import android.print.PrintAttributes
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
@@ -736,6 +737,15 @@ private fun PromptPayCheckoutDialog(
     val qrBitmap = remember(settings?.promptpayId, total) {
         runCatching { settings?.promptpayId?.let { PromptPayQr.bitmap(PromptPayQr.payload(it, total)) } }.getOrNull()
     }
+    var storeQrBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    LaunchedEffect(settings?.qrImagePath) {
+        storeQrBitmap = settings?.qrImagePath?.let { path ->
+            runCatching {
+                val bytes = withContext(Dispatchers.IO) { repo.downloadStoreQr(path) }
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            }.getOrNull()
+        }
+    }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         if (uri != null) {
             scope.launch {
@@ -775,6 +785,11 @@ private fun PromptPayCheckoutDialog(
                 Text(money(total), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
                 qrBitmap?.let { Image(it.asImageBitmap(), contentDescription = "PromptPay QR",
                     modifier = Modifier.fillMaxWidth().height(210.dp)) }
+                storeQrBitmap?.let {
+                    Text("QR ประจำร้าน")
+                    Image(it.asImageBitmap(), contentDescription = "QR ที่ร้านอัปโหลด",
+                        modifier = Modifier.fillMaxWidth().height(180.dp))
+                }
                 Text("ชื่อบัญชี: ${settings?.promptpayName ?: "-"}")
                 OutlinedButton(onClick = { picker.launch("image/*") }, enabled = !busy,
                     modifier = Modifier.fillMaxWidth()) { Text(if (slipBytes == null) "แนบรูปสลิปและอ่าน QR" else "เลือกสลิปใหม่") }
@@ -1460,6 +1475,10 @@ private fun SettingsScreen(
             Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("บัญชีและความเป็นส่วนตัว", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    OutlinedButton(onClick = {
+                        context.startActivity(Intent(Intent.ACTION_VIEW,
+                            Uri.parse("https://songpon3327ppumusic-ops.github.io/Pos/privacy/")))
+                    }, modifier = Modifier.fillMaxWidth()) { Text("อ่านนโยบายความเป็นส่วนตัว") }
                     OutlinedButton(onClick = {
                         context.startActivity(Intent(Intent.ACTION_VIEW,
                             Uri.parse("https://songpon3327ppumusic-ops.github.io/Pos/account-deletion/")))
