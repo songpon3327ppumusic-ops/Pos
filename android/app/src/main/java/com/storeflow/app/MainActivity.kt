@@ -493,7 +493,7 @@ private fun ProductDialog(onDismiss: () -> Unit, onSave: suspend (String, String
     var error by remember { mutableStateOf<String?>(null) }
     AlertDialog(onDismissRequest = onDismiss, title = { Text("เพิ่มสินค้า") },
         text = { Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
-            OutlinedTextField(sku, { sku = it }, label = { Text("SKU") }, singleLine = true)
+            OutlinedTextField(sku, { sku = it }, label = { Text("SKU") }, singleLine = true, trailingIcon = { BarcodeScanButton(onBarcode = { barcode = it; if (sku.isBlank()) sku = it }) })
             OutlinedTextField(barcode, { barcode = it.filter(Char::isDigit) }, label = { Text("บาร์โค้ด") }, singleLine = true)
             OutlinedTextField(name, { name = it }, label = { Text("ชื่อสินค้า") }, singleLine = true)
             OutlinedTextField(category, { category = it }, label = { Text("หมวดหมู่") }, singleLine = true)
@@ -575,7 +575,7 @@ private fun PosScreen(
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 8.dp),
             singleLine = true, label = { Text("ค้นหาสินค้า / สแกนบาร์โค้ด") },
             leadingIcon = { Icon(Icons.Default.Search, null) },
-            trailingIcon = { if (search.isNotBlank()) IconButton(onClick = { search = "" }) { Icon(Icons.Default.Close, "ล้าง") } }
+            trailingIcon = { Row(verticalAlignment = Alignment.CenterVertically) { BarcodeScanButton(onBarcode = { search = it }); if (search.isNotBlank()) IconButton(onClick = { search = "" }) { Icon(Icons.Default.Close, "ล้าง") } } }
         )
         LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(7.dp)) {
             if (filtered.isEmpty()) item { EmptyCard("ไม่พบสินค้า", "ตรวจสอบคำค้นหา SKU หรือบาร์โค้ด") }
