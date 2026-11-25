@@ -292,8 +292,9 @@ export default function StoreApp(){
   if(method==="card_edc"&&!cardApprovalCode.trim()){notify("กรุณากรอกรหัสอนุมัติจากเครื่อง EDC");return;}
   if(method==="card_edc"&&Number(cashReceived)>0&&Number(cashReceived)!==total){/* EDC uses exact bill amount; cash field is ignored */}
   if(!navigator.onLine&&method!=="cash"){notify("ขณะออฟไลน์รับชำระได้เฉพาะเงินสด");return;}
-  if(method==="promptpay"&&paymentSettings.promptpay_mode==="dynamic"&&!paymentSettings.promptpay_id){notify("เจ้าของร้านยังไม่ได้ตั้งค่า PromptPay");return;}
+  if(method==="promptpay"&&paymentSettings.promptpay_mode==="dynamic"){try{promptPayPayload(paymentSettings.promptpay_id,total);}catch(e){notify(e instanceof Error?e.message:"ตั้งค่า PromptPay ไม่ถูกต้อง");return;}}
   if(method==="promptpay"&&paymentSettings.promptpay_mode==="uploaded"&&!paymentQrUrl){notify("ไม่พบรูป QR ของร้าน กรุณาตรวจสอบการตั้งค่า");return;}
+  if(method==="bank_transfer"&&!paymentSettings.bank_account_number){notify("เจ้าของร้านยังไม่ได้ตั้งเลขบัญชีรับโอน");return;}
   setBusy(true);
   const order={idempotencyKey:crypto.randomUUID(),organizationId:orgId,items:cartItems.map(p=>({product_id:p.id,quantity:p.qty})),paymentMethod:payment,cashReceived:method==="cash"?Number(cashReceived):null,discount:discountValue,tax:taxValue,customerId:selectedCustomer||null,createdAt:new Date().toISOString()};
   try{
