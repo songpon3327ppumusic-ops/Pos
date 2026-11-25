@@ -105,18 +105,48 @@ returns trigger language plpgsql set search_path to ''
 as $function$
 begin
  if current_user not in ('postgres','service_role') and (
-  new.payment_status is distinct from old.payment_status or new.verification_status is distinct from old.verification_status
-  or new.transaction_ref is distinct from old.transaction_ref or new.slip_url is distinct from old.slip_url or new.verified_at is distinct from old.verified_at
- ) then raise exception using errcode='42501',message='Payment verification fields can only be changed by trusted payment workflows';end if;
- if new.payment_method in ('QR PromptPay','โอนเงิน','bank_transfer','transfer') and new.payment_status='paid' then
-  if nullif(trim(new.slip_url),'') is null or nullif(trim(new.transaction_ref),'') is null or new.verification_status not in ('verified','manual_verified') then
+  new.payment_status is distinct from old.payment_status
+  or new.verification_status is distinct from old.verification_status
+  or new.transaction_ref is distinct from old.transaction_ref
+  or new.slip_url is distinct from old.slip_url
+  or new.verified_at is distinct from old.verified_at
+ ) then
+  raise exception using errcode='42501',message='Payment verification fields can only be changed by trusted payment workflows';
+ end if;
+ return new;
+end;
+$function$;
+revoke all on function private.guard_verified_bank_payment() from public,anon,authenticated;
+drop trigger if exists guard_verified_bank_payment on public.sales;
+create trigger guard_verified_bank_payment before update on public.sales
+for each row execute function private.guard_verified_bank_payment();
+
+create or replace function private.enforce_verified_bank_payment_final_state()
+returns trigger language plpgsql security definer set search_path to ''
+as $function$
+declare v_row record;
+begin
+ select payment_method,payment_status,slip_url,transaction_ref,verification_status
+ into v_row from public.sales where id=new.id and organization_id=new.organization_id;
+ if not found then return null; end if;
+ if v_row.payment_method in ('QR PromptPay','โอนเงิน','bank_transfer','transfer')
+    and v_row.payment_status='paid' then
+  if v_row.verification_status='legacy_unverified' then return null; end if;
+  if nullif(trim(v_row.slip_url),'') is null
+     or nullif(trim(v_row.transaction_ref),'') is null
+     or v_row.verification_status not in ('verified','manual_verified') then
    raise exception using errcode='23514',message='การชำระด้วย QR/โอนเงินต้องมีสลิปและผลตรวจสอบที่ผ่านก่อนออกใบเสร็จ';
   end if;
  end if;
- return new;
-end;$function$;
-revoke all on function private.guard_verified_bank_payment() from public,anon,authenticated;
-drop trigger if exists guard_verified_bank_payment on public.sales;
-create trigger guard_verified_bank_payment before update on public.sales for each row execute function private.guard_verified_bank_payment();
+ return null;
+end;
+$function$;
+revoke all on function private.enforce_verified_bank_payment_final_state() from public,anon,authenticated;
+drop trigger if exists enforce_verified_bank_payment_final_state on public.sales;
+create constraint trigger enforce_verified_bank_payment_final_state
+after insert or update on public.sales
+deferrable initially deferred
+for each row execute function private.enforce_verified_bank_payment_final_state();
+
 revoke execute on function public.confirm_pos_payment(uuid,uuid,text,text) from public,anon,authenticated;
 update storage.buckets set file_size_limit=4194304 where id='store-payment-assets';
