@@ -174,8 +174,12 @@ Deno.serve(async (req) => {
           throw new Error("Lifetime checkout line item does not match the configured StoreFlow price");
         }
 
-        const { data: current } = await admin.from("organization_subscriptions")
-          .select("metadata").eq("organization_id", orgId).maybeSingle();
+        const { data: current, error: currentError } = await admin.from("organization_subscriptions")
+          .select("metadata,stripe_customer_id").eq("organization_id", orgId).maybeSingle();
+        if (currentError) throw currentError;
+        if (!object.customer || !current?.stripe_customer_id || object.customer !== current.stripe_customer_id) {
+          throw new Error("Lifetime checkout customer does not match the store billing customer");
+        }
         const metadata = {
           ...(current?.metadata ?? {}),
           license_type: "lifetime",
@@ -237,8 +241,12 @@ Deno.serve(async (req) => {
           : subscription.status === "past_due" ? "past_due"
           : subscription.status === "canceled" ? "canceled"
           : subscription.status === "paused" ? "paused" : "incomplete";
-        const { data: current } = await admin.from("organization_subscriptions")
-          .select("metadata").eq("organization_id", orgId).maybeSingle();
+        const { data: current, error: currentError } = await admin.from("organization_subscriptions")
+          .select("metadata,stripe_customer_id").eq("organization_id", orgId).maybeSingle();
+        if (currentError) throw currentError;
+        if (!current?.stripe_customer_id || subscription.customer !== current.stripe_customer_id) {
+          throw new Error("Subscription customer does not match the store billing customer");
+        }
         const metadata = {
           ...(current?.metadata ?? {}),
           stripe_event_created: Math.max(Number(current?.metadata?.stripe_event_created ?? 0), Number(event.created ?? 0)),
