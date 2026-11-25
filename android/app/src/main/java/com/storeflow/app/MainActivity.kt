@@ -471,6 +471,10 @@ private fun ProductsScreen(
 ) {
     var adding by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf<StoreProduct?>(null) }
+    var editing by remember { mutableStateOf<StoreProduct?>(null) }
+    var adjusting by remember { mutableStateOf<StoreProduct?>(null) }
+    var deleting by remember { mutableStateOf<StoreProduct?>(null) }
+    val scope = rememberCoroutineScope()
     Column(modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         Spacer(Modifier.height(10.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -505,11 +509,94 @@ private fun ProductsScreen(
         adding = false
         onChanged()
     })
-    selected?.let { p -> StockDialog(p, onDismiss = { selected = null }, onSave = { delta, note ->
+    selected?.let { p ->
+        AlertDialog(
+            onDismissRequest = { selected = null },
+            title = { Text(p.name) },
+            text = { Text("SKU " + p.sku + "\nคงเหลือ " + qty(p.stock) + "\nราคา " + money(p.price)) },
+            confirmButton = {
+                Column {
+                    TextButton(onClick = { editing = p; selected = null }) { Text("แก้ไขสินค้า") }
+                    TextButton(onClick = { adjusting = p; selected = null }) { Text("ปรับสต็อก") }
+                    TextButton(onClick = { deleting = p; selected = null }) { Text("ลบสินค้า", color = MaterialTheme.colorScheme.error) }
+                }
+            },
+            dismissButton = { TextButton(onClick = { selected = null }) { Text("ปิด") } }
+        )
+    }
+    adjusting?.let { p -> StockDialog(p, onDismiss = { adjusting = null }, onSave = { delta, note ->
         repo.adjustStock(orgId, p.id, delta, note)
-        selected = null
+        adjusting = null
         onChanged()
     }) }
+    editing?.let { p -> ProductEditDialog(
+        product = p,
+        onDismiss = { editing = null },
+        onSave = { sku, name, category, price, minimum, barcode ->
+            repo.updateProduct(orgId, p.id, sku, name, category, price, minimum, barcode)
+            editing = null
+            onChanged()
+        }
+    ) }
+    deleting?.let { p ->
+        AlertDialog(
+            onDismissRequest = { deleting = null },
+            title = { Text("ยืนยันลบสินค้า") },
+            text = { Text("สินค้า " + p.name + " จะถูกซ่อนจากรายการขาย ประวัติการขายเดิมยังคงอยู่") },
+            confirmButton = { TextButton(onClick = {
+                scope.launch {
+                    try { repo.archiveProduct(orgId, p.id); deleting = null; onChanged() }
+                    catch (e: Exception) { deleting = null }
+                }
+            }) { Text("ยืนยันลบ") } },
+            dismissButton = { TextButton(onClick = { deleting = null }) { Text("ยกเลิก") } }
+        )
+    }
+}
+
+@Composable
+private fun ProductEditDialog(
+    product: StoreProduct,
+    onDismiss: () -> Unit,
+    onSave: suspend (String, String, String, Double, Double, String) -> Unit
+) {
+    val scope = rememberCoroutineScope()
+    var sku by remember { mutableStateOf(product.sku) }
+    var name by remember { mutableStateOf(product.name) }
+    var category by remember { mutableStateOf(product.category.orEmpty()) }
+    var price by remember { mutableStateOf(product.price.toString()) }
+    var minimum by remember { mutableStateOf(product.minStock.toString()) }
+    var barcode by remember { mutableStateOf(product.barcode.orEmpty()) }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("แก้ไขสินค้า") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                OutlinedTextField(sku, { sku = it }, label = { Text("SKU") }, singleLine = true,
+                    trailingIcon = { BarcodeScanButton(onBarcode = { barcode = it }) })
+                OutlinedTextField(barcode, { barcode = it.filter(Char::isDigit) }, label = { Text("บาร์โค้ด") }, singleLine = true)
+                OutlinedTextField(name, { name = it }, label = { Text("ชื่อสินค้า") }, singleLine = true)
+                OutlinedTextField(category, { category = it }, label = { Text("หมวดหมู่") }, singleLine = true)
+                OutlinedTextField(price, { price = it }, label = { Text("ราคาขาย") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
+                OutlinedTextField(minimum, { minimum = it }, label = { Text("แจ้งเตือนสต็อกต่ำกว่า") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
+                Text("สต็อกคงเหลือ: " + qty(product.stock) + " • ใช้เมนูปรับสต็อกเพื่อเปลี่ยนจำนวน")
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            }
+        },
+        confirmButton = { TextButton(enabled = !busy, onClick = {
+            val p = price.toDoubleOrNull(); val m = minimum.toDoubleOrNull()
+            if (sku.isBlank() || name.isBlank() || p == null || m == null || p < 0 || m < 0) error = "กรอกข้อมูลและตัวเลขให้ถูกต้อง"
+            else scope.launch {
+                busy = true
+                try { onSave(sku, name, category, p, m, barcode) }
+                catch (e: Exception) { error = e.message ?: "แก้ไขไม่สำเร็จ" }
+                finally { busy = false }
+            }
+        }) { Text(if (busy) "กำลังบันทึก..." else "บันทึกการแก้ไข") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("ยกเลิก") } }
+    )
 }
 
 @Composable
