@@ -33,6 +33,21 @@ import java.text.NumberFormat
 import java.util.Locale
 import java.time.LocalDate
 import java.time.ZoneId
+import java.time.Instant
+import java.time.OffsetDateTime
+import java.time.format.DateTimeFormatter
+
+
+private val ThaiDateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+
+private fun formatThaiDateTime(value: String?): String {
+    if (value.isNullOrBlank()) return "-"
+    val instant = runCatching { Instant.parse(value) }
+        .recoverCatching { OffsetDateTime.parse(value).toInstant() }
+        .getOrNull()
+    return instant?.atZone(ZoneId.of("Asia/Bangkok"))?.format(ThaiDateTimeFormatter)
+        ?: value.replace("T", " ").take(16)
+}
 
 private val Page = Color(0xFFF6F8FB)
 private val Green = Color(0xFF123C35)
@@ -574,7 +589,7 @@ private fun WorkforceScreen(
                     Column(Modifier.fillMaxWidth().padding(14.dp)) {
                         Text(employee?.fullName ?: "พนักงาน", fontWeight = FontWeight.SemiBold)
                         Text(shift.shiftName, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("${shift.startsAt.take(16).replace("T", " ")} – ${shift.endsAt.take(16).replace("T", " ")}")
+                        Text("${formatThaiDateTime(shift.startsAt)} – ${formatThaiDateTime(shift.endsAt)}")
                         Text("พัก ${shift.breakMinutes} นาที", style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
@@ -608,8 +623,8 @@ private fun WorkforceScreen(
                 Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
                     Column(Modifier.padding(14.dp)) {
                         Text(employee?.fullName ?: "พนักงาน", fontWeight = FontWeight.SemiBold)
-                        Text("เข้า: ${record.clockIn?.replace("T", " ")?.take(16) ?: "ยังไม่ลงเวลา"}")
-                        Text("ออก: ${record.clockOut?.replace("T", " ")?.take(16) ?: "ยังไม่ออกกะ"}")
+                        Text("เข้า: ${record.clockIn?.let { formatThaiDateTime(it) } ?: "ยังไม่ลงเวลา"}")
+                        Text("ออก: ${record.clockOut?.let { formatThaiDateTime(it) } ?: "ยังไม่ออกกะ"}")
                         Text("ทำงาน ${record.workedMinutes} นาที • สาย ${record.lateMinutes} นาที",
                             color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                     }
@@ -667,8 +682,8 @@ private fun SelfAttendanceScreen(
                         Text("${shift.startsAt.take(16).replace("T", " ")} – ${shift.endsAt.take(16).replace("T", " ")}")
                     }
                     HorizontalDivider()
-                    Text("เวลาเข้า: ${attendance?.clockIn?.replace("T", " ")?.take(16) ?: "ยังไม่ลงเวลา"}")
-                    Text("เวลาออก: ${attendance?.clockOut?.replace("T", " ")?.take(16) ?: "ยังไม่ออกกะ"}")
+                    Text("เวลาเข้า: ${attendance?.clockIn?.let { formatThaiDateTime(it) } ?: "ยังไม่ลงเวลา"}")
+                    Text("เวลาออก: ${attendance?.clockOut?.let { formatThaiDateTime(it) } ?: "ยังไม่ออกกะ"}")
                     if (attendance != null) {
                         Text("เวลาทำงาน ${attendance.workedMinutes} นาที • มาสาย ${attendance.lateMinutes} นาที",
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
