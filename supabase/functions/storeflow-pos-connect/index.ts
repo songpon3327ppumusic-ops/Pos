@@ -21,7 +21,8 @@ Deno.serve(async(req)=>{
   const admin=createClient(url,service);
   const {data:member}=await admin.from("organization_members").select("role,is_active,membership_status").eq("organization_id",organization_id).eq("user_id",user.id).maybeSingle();
   if(!member?.is_active||member.membership_status!=="active"||member.role!=="owner")return json({error:"Only the active store owner can connect Stripe"},403);
-  const {data:org}=await admin.from("organizations").select("name").eq("id",organization_id).single();
+  if(action==="onboard"){const {data:allowed,error:limitError}=await admin.rpc("consume_storeflow_rate_limit",{p_key:"stripe-connect:"+organization_id+":"+user.id,p_window_seconds:600,p_limit:3});if(limitError)throw limitError;if(allowed!==true)return json({error:"เริ่มเชื่อมต่อ Stripe บ่อยเกินไป กรุณารอ 10 นาที"},429);}
+   const {data:org}=await admin.from("organizations").select("name").eq("id",organization_id).single();
   const {data:settings}=await admin.from("store_payment_settings").select("*").eq("organization_id",organization_id).maybeSingle();
   if(action==="onboard"){
    let accountId=settings?.stripe_connect_account_id;
