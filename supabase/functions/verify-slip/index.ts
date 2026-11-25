@@ -146,7 +146,7 @@ Deno.serve(async (req) => {
     const providerBody = await providerResponse.json().catch(() => ({}));
     if (!providerResponse.ok || providerBody.success !== true) {
       const code = String(providerBody.error?.code ?? "");
-      const retryable = providerResponse.status >= 500 || providerResponse.status === 429 || code === "QUOTA_EXCEEDED";
+      const retryable = providerResponse.status >= 500 || providerResponse.status === 429 || providerResponse.status === 401 || providerResponse.status === 403 || code === "QUOTA_EXCEEDED";
       if (retryable) {
         const { error } = await admin.from("sales").update({
           slip_url: slipPath, slip_path: slipPath, transaction_ref: clientRef || null,
