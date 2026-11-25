@@ -6,9 +6,12 @@ import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Order
 import io.github.jan.supabase.storage.storage
+import io.github.jan.supabase.functions.functions
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -297,6 +300,7 @@ class StoreFlowRepository(private val client: SupabaseClient) {
                 put("bank_account_name", value.bankAccountName ?: JsonNull)
                 put("bank_account_number", value.bankAccountNumber ?: JsonNull)
                 put("qr_image_path", value.qrImagePath ?: JsonNull)
+                put("qr_image_path", value.qrImagePath ?: JsonNull)
             })
         }
         client.from("store_payment_settings").insert(
@@ -331,7 +335,36 @@ class StoreFlowRepository(private val client: SupabaseClient) {
     }
 
 
-    suspend fun subscription(organizationId: String): StoreSubscription? =
+
+    suspend fun exportStoreBackup(organizationId: String): String {
+        val params = buildJsonObject { put("p_organization_id", organizationId) }
+        return client.postgrest.rpc("storeflow_export_json", params).decodeAs<JsonElement>().toString()
+    }
+
+    suspend fun importStoreBackup(organizationId: String, jsonText: String): String {
+        val backup = Json.parseToJsonElement(jsonText)
+        val params = buildJsonObject {
+            put("p_organization_id", organizationId)
+            put("p_backup", backup)
+        }
+        return client.postgrest.rpc("storeflow_import_json", params).decodeAs<JsonElement>().toString()
+    }
+
+    suspend fun uploadStoreQr(organizationId: String, bytes: ByteArray): String {
+        require(bytes.isNotEmpty() && bytes.size <= 6 * 1024 * 1024) { "ไฟล์ QR ต้องมีขนาดไม่เกิน 6 MB" }
+        val path = "$organizationId/qr/${UUID.randomUUID()}.jpg"
+        client.storage.from("storeflow-store-assets").upload(path, bytes) {
+            contentType = io.ktor.http.ContentType.Image.JPEG
+        }
+        return path
+    }
+
+    suspend fun deleteAccountPermanently() {
+        val body = buildJsonObject { put("confirm", "DELETE MY ACCOUNT") }
+        client.functions.invoke("storeflow-delete-account", body = body)
+    }
+
+    suspend fun subscription(organizationId: String): StoreSubscription?
         client.from("organization_subscriptions").select {
             filter { eq("organization_id", organizationId) }
             limit(1)
