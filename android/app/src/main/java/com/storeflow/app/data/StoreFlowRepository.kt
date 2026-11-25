@@ -65,7 +65,163 @@ data class StoreMetrics(
     val lowStockCount: Int = 0
 )
 
+
+@Serializable
+data class StoreEmployee(
+    val id: String,
+    @SerialName("employee_code") val employeeCode: String,
+    @SerialName("full_name") val fullName: String,
+    val position: String? = null,
+    val department: String? = null,
+    @SerialName("employment_type") val employmentType: String? = null,
+    @SerialName("is_active") val isActive: Boolean = true
+)
+
+@Serializable
+data class EmployeeInsert(
+    @SerialName("organization_id") val organizationId: String,
+    @SerialName("employee_code") val employeeCode: String,
+    @SerialName("full_name") val fullName: String,
+    val position: String? = null,
+    val department: String? = null,
+    @SerialName("employment_type") val employmentType: String = "permanent",
+    @SerialName("is_active") val isActive: Boolean = true
+)
+
+@Serializable
+data class StoreShift(
+    val id: String,
+    @SerialName("employee_id") val employeeId: String,
+    @SerialName("shift_date") val shiftDate: String,
+    @SerialName("starts_at") val startsAt: String,
+    @SerialName("ends_at") val endsAt: String,
+    @SerialName("shift_name") val shiftName: String,
+    @SerialName("break_minutes") val breakMinutes: Int = 0,
+    val notes: String? = null
+)
+
+@Serializable
+data class ShiftInsert(
+    @SerialName("organization_id") val organizationId: String,
+    @SerialName("employee_id") val employeeId: String,
+    @SerialName("shift_date") val shiftDate: String,
+    @SerialName("starts_at") val startsAt: String,
+    @SerialName("ends_at") val endsAt: String,
+    @SerialName("shift_name") val shiftName: String = "กะงาน",
+    @SerialName("break_minutes") val breakMinutes: Int = 0,
+    val notes: String? = null
+)
+
+@Serializable
+data class AttendanceRecord(
+    val id: String,
+    @SerialName("employee_id") val employeeId: String,
+    @SerialName("work_date") val workDate: String,
+    @SerialName("clock_in") val clockIn: String? = null,
+    @SerialName("clock_out") val clockOut: String? = null,
+    @SerialName("worked_minutes") val workedMinutes: Int = 0,
+    @SerialName("late_minutes") val lateMinutes: Int = 0,
+    val status: String = "present"
+)
+
 class StoreFlowRepository(private val client: SupabaseClient) {
+
+    suspend fun employees(organizationId: String): List<StoreEmployee> =
+        client.from("employees").select {
+            filter {
+                eq("organization_id", organizationId)
+                eq("is_active", true)
+            }
+            order("full_name", Order.ASCENDING)
+            limit(300)
+        }.decodeList()
+
+    suspend fun addEmployee(
+        organizationId: String,
+        fullName: String,
+        position: String,
+        department: String,
+        employmentType: String
+    ) {
+        require(fullName.isNotBlank()) { "กรุณากรอกชื่อพนักงาน" }
+        val code = "SF-" + UUID.randomUUID().toString().take(8).uppercase()
+        client.from("employees").insert(
+            EmployeeInsert(
+                organizationId = organizationId,
+                employeeCode = code,
+                fullName = fullName.trim(),
+                position = position.trim().ifBlank { null },
+                department = department.trim().ifBlank { null },
+                employmentType = employmentType
+            )
+        )
+    }
+
+    suspend fun shifts(organizationId: String, shiftDate: String): List<StoreShift> =
+        client.from("shifts").select {
+            filter {
+                eq("organization_id", organizationId)
+                eq("shift_date", shiftDate)
+            }
+            order("starts_at", Order.ASCENDING)
+            limit(300)
+        }.decodeList()
+
+    suspend fun scheduleShift(
+        organizationId: String,
+        employeeId: String,
+        shiftDate: String,
+        startTime: String,
+        endTime: String,
+        shiftName: String,
+        breakMinutes: Int
+    ) {
+        val zone = ZoneId.of("Asia/Bangkok")
+        val start = java.time.LocalDateTime.parse(
+            "$shiftDateT$startTime"
+        ).atZone(zone).toInstant().toString()
+        val end = java.time.LocalDateTime.parse(
+            "$shiftDateT$endTime"
+        ).atZone(zone).toInstant().toString()
+        require(java.time.Instant.parse(end).isAfter(java.time.Instant.parse(start))) {
+            "เวลาเลิกกะต้องอยู่หลังเวลาเริ่มกะ"
+        }
+        require(breakMinutes in 0..480) { "เวลาพักไม่ถูกต้อง" }
+        client.from("shifts").insert(
+            ShiftInsert(
+                organizationId = organizationId,
+                employeeId = employeeId,
+                shiftDate = shiftDate,
+                startsAt = start,
+                endsAt = end,
+                shiftName = shiftName.ifBlank { "กะงาน" },
+                breakMinutes = breakMinutes
+            )
+        )
+    }
+
+    suspend fun attendanceToday(organizationId: String, workDate: String): List<AttendanceRecord> =
+        client.from("attendance").select {
+            filter {
+                eq("organization_id", organizationId)
+                eq("work_date", workDate)
+            }
+            limit(500)
+        }.decodeList()
+
+    suspend fun clockIn(organizationId: String, shiftId: String): String {
+        val params = buildJsonObject {
+            put("p_organization_id", organizationId)
+            put("p_shift_id", shiftId)
+        }
+        return client.postgrest.rpc("storeflow_clock_in", params).decodeAs<String>()
+    }
+
+    suspend fun clockOut(organizationId: String): String {
+        val params = buildJsonObject { put("p_organization_id", organizationId) }
+        return client.postgrest.rpc("storeflow_clock_out", params).decodeAs<String>()
+    }
+
     suspend fun signIn(email: String, password: String) {
         client.auth.signInWith(io.github.jan.supabase.auth.providers.builtin.Email) {
             this.email = email
