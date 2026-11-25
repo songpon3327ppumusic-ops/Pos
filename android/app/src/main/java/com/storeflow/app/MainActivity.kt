@@ -1247,6 +1247,55 @@ private fun SettingsScreen(
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    var deleteConfirm by remember { mutableStateOf(false) }
+    var backupJson by remember { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
+    val exportBackupLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) scope.launch {
+            try {
+                val data = backupJson ?: error("ไม่มีข้อมูลสำรอง")
+                withContext(Dispatchers.IO) {
+                    context.contentResolver.openOutputStream(uri)?.use { it.write(data.toByteArray(Charsets.UTF_8)) }
+                        ?: error("บันทึกไฟล์ไม่สำเร็จ")
+                }
+                message = "ส่งออกข้อมูลสำรองเรียบร้อย"
+            } catch (e: Exception) { error = e.message ?: "ส่งออกข้อมูลไม่สำเร็จ" }
+        }
+    }
+    val importBackupLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) scope.launch {
+            busy = true; error = null; message = null
+            try {
+                val data = withContext(Dispatchers.IO) {
+                    context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                        ?: error("อ่านไฟล์สำรองไม่สำเร็จ")
+                }
+                message = repo.importStoreBackup(store.id, data)
+            } catch (e: Exception) { error = e.message ?: "นำเข้าข้อมูลไม่สำเร็จ" }
+            finally { busy = false }
+        }
+    }
+    val qrPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        if (uri != null) scope.launch {
+            busy = true; error = null
+            try {
+                val bytes = withContext(Dispatchers.IO) {
+                    context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                        ?: error("อ่านรูป QR ไม่สำเร็จ")
+                }
+                val path = repo.uploadStoreQr(store.id, bytes)
+                val updated = settings.copy(qrImagePath = path)
+                repo.saveStorePaymentSettings(updated)
+                settings = updated
+                message = "อัปโหลด QR ของร้านเรียบร้อย"
+            } catch (e: Exception) { error = e.message ?: "อัปโหลด QR ไม่สำเร็จ" }
+            finally { busy = false }
+        }
+    }
 
     LaunchedEffect(store.id) {
         runCatching {
@@ -1260,6 +1309,28 @@ private fun SettingsScreen(
         }.onFailure { error = it.message ?: "โหลดการตั้งค่าไม่สำเร็จ" }
     }
 
+    if (deleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { if (!busy) deleteConfirm = false },
+            title = { Text("ยืนยันลบบัญชีถาวร") },
+            text = { Text("การลบบัญชีไม่สามารถย้อนกลับได้ หากคุณเป็นเจ้าของร้าน ระบบจะลบข้อมูลร้านที่คุณเป็นเจ้าของ รวมถึงสินค้า พนักงาน ยอดขาย และข้อมูลที่เกี่ยวข้องทั้งหมด กรุณาส่งออก JSON ก่อนดำเนินการ") },
+            confirmButton = {
+                TextButton(enabled = !busy, onClick = {
+                    scope.launch {
+                        busy = true; error = null
+                        try {
+                            repo.deleteAccountPermanently()
+                            deleteConfirm = false
+                            onSignOut()
+                        } catch (e: Exception) {
+                            error = e.message ?: "ลบบัญชีไม่สำเร็จ"
+                        } finally { busy = false }
+                    }
+                }) { Text(if (busy) "กำลังลบ..." else "ยืนยันลบบัญชี") }
+            },
+            dismissButton = { TextButton(onClick = { deleteConfirm = false }, enabled = !busy) { Text("ยกเลิก") } }
+        )
+    }
     LazyColumn(modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { Text("ตั้งค่า", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold) }
         item {
@@ -1302,6 +1373,13 @@ private fun SettingsScreen(
                         enabled = canManage, singleLine = true, modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(bankAccountNumber, { bankAccountNumber = it }, label = { Text("เลขบัญชี") },
                         enabled = canManage, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    if (canManage) {
+                        OutlinedButton(onClick = { qrPicker.launch("image/*") },
+                            enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                            Text(if (settings.qrImagePath == null) "อัปโหลด QR ประจำร้าน" else "เปลี่ยนรูป QR ประจำร้าน")
+                        }
+                        settings.qrImagePath?.let { Text("มีรูป QR ร้านบันทึกไว้", color = MaterialTheme.colorScheme.primary) }
+                    }
                     if (canManage) Button(
                         enabled = !busy,
                         onClick = {
@@ -1354,6 +1432,44 @@ private fun SettingsScreen(
                             finally { busy = false }
                         }
                     }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("สร้าง / แสดงรหัสเชิญ") }
+                }
+            }
+        }
+        if (canManage) item {
+            Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("สำรองและกู้คืนข้อมูลร้าน", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text("ส่งออกข้อมูลร้านเป็น JSON หรือรวมข้อมูลจากไฟล์สำรองเข้าร้านนี้ โดยไม่เขียนทับรายการที่มีอยู่")
+                    OutlinedButton(enabled = !busy, onClick = {
+                        scope.launch {
+                            busy = true; error = null
+                            try {
+                                backupJson = repo.exportStoreBackup(store.id)
+                                exportBackupLauncher.launch("StoreFlow-${store.id}-backup.json")
+                            } catch (e: Exception) { error = e.message ?: "สำรองข้อมูลไม่สำเร็จ" }
+                            finally { busy = false }
+                        }
+                    }, modifier = Modifier.fillMaxWidth()) { Text("ส่งออกข้อมูล JSON") }
+                    OutlinedButton(enabled = !busy, onClick = {
+                        importBackupLauncher.launch(arrayOf("application/json", "text/json"))
+                    }, modifier = Modifier.fillMaxWidth()) { Text("นำเข้าข้อมูล JSON") }
+                }
+            }
+        }
+        item {
+            Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("บัญชีและความเป็นส่วนตัว", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    OutlinedButton(onClick = {
+                        context.startActivity(Intent(Intent.ACTION_VIEW,
+                            Uri.parse("https://songpon3327ppumusic-ops.github.io/Pos/account-deletion/")))
+                    }, modifier = Modifier.fillMaxWidth()) { Text("เปิดหน้าเว็บขอลบบัญชี") }
+                    Button(onClick = { deleteConfirm = true }, modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB42318))) {
+                        Text("ลบบัญชีและข้อมูลที่เกี่ยวข้องถาวร")
+                    }
+                    Text("หากเป็นเจ้าของร้าน ระบบจะลบข้อมูลร้านที่คุณเป็นเจ้าของด้วย ส่วนประวัติธุรกรรมของร้านอื่นที่คุณเคยทำงานจะเก็บไว้โดยไม่ระบุตัวบัญชี",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
