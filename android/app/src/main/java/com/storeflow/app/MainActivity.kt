@@ -507,18 +507,39 @@ private fun WorkforceScreen(
 
     LaunchedEffect(organizationId) { refresh() }
 
-    if (!canManage) {
-        Column(modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(Icons.Default.Lock, null, modifier = Modifier.size(44.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("ไม่มีสิทธิ์จัดการบุคลากร", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Text("เมนูนี้สำหรับเจ้าของร้าน ผู้ดูแลระบบ และฝ่าย HR",
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        return
-    }
     if (loading) {
         Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+        return
+    }
+    if (!canManage) {
+        SelfAttendanceScreen(
+            modifier = modifier,
+            employee = employees.firstOrNull(),
+            shifts = shifts,
+            attendance = attendance.firstOrNull(),
+            onClockIn = { shiftId ->
+                scope.launch {
+                    busy = true
+                    try {
+                        withContext(Dispatchers.IO) { repo.clockIn(organizationId, shiftId) }
+                        refresh()
+                    } catch (e: Exception) { error = e.message ?: "ลงเวลาเข้างานไม่สำเร็จ" }
+                    finally { busy = false }
+                }
+            },
+            onClockOut = {
+                scope.launch {
+                    busy = true
+                    try {
+                        withContext(Dispatchers.IO) { repo.clockOut(organizationId) }
+                        refresh()
+                    } catch (e: Exception) { error = e.message ?: "ลงเวลาออกงานไม่สำเร็จ" }
+                    finally { busy = false }
+                }
+            },
+            busy = busy,
+            error = error
+        )
         return
     }
 
@@ -616,6 +637,59 @@ private fun WorkforceScreen(
                 refresh()
             }
         )
+    }
+}
+
+
+@Composable
+private fun SelfAttendanceScreen(
+    modifier: Modifier,
+    employee: StoreEmployee?,
+    shifts: List<StoreShift>,
+    attendance: AttendanceRecord?,
+    onClockIn: (String) -> Unit,
+    onClockOut: () -> Unit,
+    busy: Boolean,
+    error: String?
+) {
+    val shift = employee?.let { person -> shifts.firstOrNull { it.employeeId == person.id } }
+    Column(modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Text("ลงเวลาทำงาน", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        if (employee == null) {
+            EmptyCard("ยังไม่พบโปรไฟล์พนักงาน", "ให้เจ้าของร้านหรือฝ่าย HR เชื่อมบัญชีนี้กับข้อมูลพนักงานก่อน")
+        } else {
+            Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(employee.fullName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text(employee.employeeCode, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(shift?.shiftName ?: "วันนี้ยังไม่มีกะงาน")
+                    if (shift != null) {
+                        Text("${shift.startsAt.take(16).replace("T", " ")} – ${shift.endsAt.take(16).replace("T", " ")}")
+                    }
+                    HorizontalDivider()
+                    Text("เวลาเข้า: ${attendance?.clockIn?.replace("T", " ")?.take(16) ?: "ยังไม่ลงเวลา"}")
+                    Text("เวลาออก: ${attendance?.clockOut?.replace("T", " ")?.take(16) ?: "ยังไม่ออกกะ"}")
+                    if (attendance != null) {
+                        Text("เวลาทำงาน ${attendance.workedMinutes} นาที • มาสาย ${attendance.lateMinutes} นาที",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+            if (attendance?.clockIn == null) {
+                Button(
+                    onClick = { shift?.let { onClockIn(it.id) } },
+                    enabled = shift != null && !busy,
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text(if (busy) "กำลังบันทึก..." else "ลงเวลาเข้างาน") }
+            } else if (attendance.clockOut == null) {
+                Button(onClick = onClockOut, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                    Text(if (busy) "กำลังบันทึก..." else "ลงเวลาออกงาน")
+                }
+            } else {
+                Text("ลงเวลาครบแล้วสำหรับวันนี้", color = Color(0xFF027A48), fontWeight = FontWeight.SemiBold)
+            }
+        }
+        error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
     }
 }
 
