@@ -47,6 +47,7 @@ export default function StoreApp(){
  const [form,setForm]=useState({name:"",sku:"",barcode:"",category:"ทั่วไป",price:"",cost:"",stock:"",phone:"",email:"",amount:"",position:"",department:""});
  const [cart,setCart]=useState<{id:string;qty:number}[]>([]),[payment,setPayment]=useState("เงินสด"),[cashReceived,setCashReceived]=useState("0"),[discount,setDiscount]=useState("0"),[vat,setVat]=useState(false),[selectedCustomer,setSelectedCustomer]=useState("");
  const [stockDelta,setStockDelta]=useState(""),[stockNote,setStockNote]=useState("");
+ const [productImageFile,setProductImageFile]=useState<File|null>(null),[productImagePreview,setProductImagePreview]=useState(""),[removeProductImage,setRemoveProductImage]=useState(false);
  const notify=(s:string)=>{setToast(s);window.setTimeout(()=>setToast(""),2600)};
  useEffect(()=>()=>{if(productImagePreview.startsWith("blob:"))URL.revokeObjectURL(productImagePreview);},[productImagePreview]);
  const field="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100";
