@@ -302,4 +302,20 @@ using (
  )
 );
 
+-- Organization ownership keys are immutable on the per-store settings tables.
+drop trigger if exists prevent_org_change on public.organization_business_settings;
+create trigger prevent_org_change before update of organization_id
+on public.organization_business_settings for each row
+execute function private.prevent_organization_id_change();
+
+drop trigger if exists prevent_org_change on public.organization_hardware_settings;
+create trigger prevent_org_change before update of organization_id
+on public.organization_hardware_settings for each row
+execute function private.prevent_organization_id_change();
+
+drop trigger if exists prevent_org_change on public.store_payment_settings;
+create trigger prevent_org_change before update of organization_id
+on public.store_payment_settings for each row
+execute function private.prevent_organization_id_change();
+
 commit;
