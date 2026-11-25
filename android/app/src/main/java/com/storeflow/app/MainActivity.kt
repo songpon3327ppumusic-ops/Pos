@@ -1492,6 +1492,14 @@ private fun SettingsScreen(
         }.onFailure { error = it.message ?: "โหลดการตั้งค่าไม่สำเร็จ" }
     }
 
+    LaunchedEffect(billingStatus) {
+        if (billingStatus.startsWith("ส่งตรวจสอบการซื้อกับ Google Play แล้ว:")) {
+            delay(1200)
+            runCatching { subscription = repo.subscription(store.id) }
+                .onFailure { error = it.message ?: "อัปเดตสถานะแพ็กเกจไม่สำเร็จ" }
+        }
+    }
+
     if (deleteConfirm) {
         AlertDialog(
             onDismissRequest = { if (!busy) deleteConfirm = false },
