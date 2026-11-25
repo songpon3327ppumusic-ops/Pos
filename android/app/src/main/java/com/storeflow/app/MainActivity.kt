@@ -126,6 +126,7 @@ private fun LoginScreen() {
     var storeName by rememberSaveable { mutableStateOf("") }
     var inviteCode by rememberSaveable { mutableStateOf("") }
     var mode by rememberSaveable { mutableStateOf("login") }
+    var pendingMode by rememberSaveable { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var info by remember { mutableStateOf<String?>(null) }
@@ -181,13 +182,21 @@ private fun LoginScreen() {
                     onClick = {
                         runAuth {
                             when(mode) {
-                                "login" -> repo.signIn(email.trim(), password)
+                                "login" -> {
+                                    repo.signIn(email.trim(), password)
+                                    when (pendingMode) {
+                                        "create" -> { repo.createStore(storeName); pendingMode = "" }
+                                        "join" -> { repo.joinStore(inviteCode); pendingMode = "" }
+                                    }
+                                }
                                 "create" -> {
                                     repo.signUp(email.trim(), password)
                                     if (StoreFlowSupabase.client.auth.currentSessionOrNull() != null) {
                                         repo.createStore(storeName)
                                     } else {
-                                        info = "สมัครบัญชีแล้ว กรุณายืนยันอีเมล จากนั้นเข้าสู่ระบบเพื่อสร้างร้านค้า"
+                                        pendingMode = "create"
+                                        mode = "login"
+                                        info = "สมัครบัญชีแล้ว กรุณายืนยันอีเมล จากนั้นเข้าสู่ระบบ ระบบจะสร้างร้านค้าให้ต่ออัตโนมัติ"
                                     }
                                 }
                                 "join" -> {
@@ -195,7 +204,9 @@ private fun LoginScreen() {
                                     if (StoreFlowSupabase.client.auth.currentSessionOrNull() != null) {
                                         repo.joinStore(inviteCode)
                                     } else {
-                                        info = "สมัครบัญชีแล้ว กรุณายืนยันอีเมล จากนั้นเข้าสู่ระบบและกรอกรหัสเชิญอีกครั้ง"
+                                        pendingMode = "join"
+                                        mode = "login"
+                                        info = "สมัครบัญชีแล้ว กรุณายืนยันอีเมล จากนั้นเข้าสู่ระบบ ระบบจะเข้าร่วมร้านด้วยรหัสเชิญให้อัตโนมัติ"
                                     }
                                 }
                             }
