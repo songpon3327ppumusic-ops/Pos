@@ -309,7 +309,7 @@ export default function StoreApp(){
    else{setModal("receipt");notify(method==="customer_credit"?"บันทึกยอดขายเชื่อและลูกหนี้แล้ว":"บันทึกการขายและตัดสต็อกเรียบร้อย");}
   }catch(e){
    if(!navigator.onLine||e instanceof TypeError){if(method==="cash"){await enqueueOfflineOrder(order);setOfflineCount((await listOfflineOrders()).length);setCart([]);setDiscount("0");setVat(false);setCashReceived("0");setSelectedCustomer("");notify("เครือข่ายขัดข้อง บันทึกบิลเงินสดไว้รอซิงก์แล้ว");}else notify("เครือข่ายขัดข้อง ไม่สามารถยืนยันการชำระเงินได้");}
-   else notify(e instanceof Error?e.message:"ทำรายการขายไม่สำเร็จ");
+   else notify(typeof (e as any)?.message==="string"?(e as any).message:e instanceof Error?e.message:"ทำรายการขายไม่สำเร็จ");
   }finally{setBusy(false);}
  };
  const confirmPendingPayment=async()=>{
