@@ -324,8 +324,28 @@ export default function StoreApp(){
  };
  const receiveCustomerCredit=async()=>{
   if(!record?.id||!orgId)return;setBusy(true);
-  try{const {error}=await supabase.rpc("record_customer_credit_payment",{p_organization_id:orgId,p_customer_id:record.id,p_amount:Number(creditPayAmount),p_payment_method:creditPayMethod,p_payment_ref:paymentRefInput||null});if(error)throw error;await reload();const {data:ledger}=await supabase.from("customer_credit_ledger").select("*").eq("organization_id",orgId).order("created_at",{ascending:false}).limit(500);setCreditLedger(ledger||[]);setModal(null);setCreditPayAmount("");setPaymentRefInput("");notify("บันทึกรับชำระหนี้แล้ว");}
-  catch(e){notify(e instanceof Error?e.message:"รับชำระหนี้ไม่สำเร็จ");}finally{setBusy(false);}
+  try{
+   const amount=Number(creditPayAmount),paymentRef=paymentRefInput.trim()||"";
+   if(!Number.isFinite(amount)||amount<=0)throw new Error("ยอดรับชำระไม่ถูกต้อง");
+   const storageKey="storeflow:credit-payment:"+orgId+":"+record.id;
+   let pending:any=null;
+   try{const raw=sessionStorage.getItem(storageKey);if(raw)pending=JSON.parse(raw);}catch{}
+   if(!pending||pending.amount!==amount||pending.paymentRef!==paymentRef||pending.method!==creditPayMethod||typeof pending.key!=="string"){
+    pending={key:crypto.randomUUID(),amount,paymentRef,method:creditPayMethod};
+    sessionStorage.setItem(storageKey,JSON.stringify(pending));
+   }
+   const {error}=await supabase.rpc("record_customer_credit_payment_idempotent",{
+    p_organization_id:orgId,p_customer_id:record.id,p_amount:amount,
+    p_payment_method:creditPayMethod,p_payment_ref:paymentRef||null,p_idempotency_key:pending.key
+   });
+   if(error)throw error;
+   await reload();
+   const {data:ledger}=await supabase.from("customer_credit_ledger").select("*").eq("organization_id",orgId).order("created_at",{ascending:false}).limit(500);
+   setCreditLedger(ledger||[]);
+   sessionStorage.removeItem(storageKey);
+   setModal(null);setCreditPayAmount("");setPaymentRefInput("");notify("บันทึกรับชำระหนี้แล้ว");
+  }catch(e){notify(e instanceof Error?e.message:"รับชำระหนี้ไม่สำเร็จ");}
+  finally{setBusy(false);}
  };
  const exportCsv=(name:string,rows:any[])=>{
   if(!rows.length){notify("ไม่มีข้อมูลสำหรับส่งออก");return;}
