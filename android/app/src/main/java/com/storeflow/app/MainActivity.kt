@@ -43,6 +43,7 @@ import io.github.jan.supabase.auth.status.SessionStatus
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
 import java.text.NumberFormat
 import java.util.Locale
 import java.time.LocalDate
@@ -1286,8 +1287,21 @@ private fun SettingsScreen(
             busy = true; error = null; message = null
             try {
                 val data = withContext(Dispatchers.IO) {
-                    context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                    val input = context.contentResolver.openInputStream(uri)
                         ?: error("อ่านไฟล์สำรองไม่สำเร็จ")
+                    input.use { stream ->
+                        val output = ByteArrayOutputStream()
+                        val buffer = ByteArray(8192)
+                        var total = 0
+                        while (true) {
+                            val count = stream.read(buffer)
+                            if (count < 0) break
+                            total += count
+                            require(total <= 8 * 1024 * 1024) { "ไฟล์สำรองต้องมีขนาดไม่เกิน 8 MB" }
+                            output.write(buffer, 0, count)
+                        }
+                        String(output.toByteArray(), Charsets.UTF_8)
+                    }
                 }
                 message = repo.importStoreBackup(store.id, data)
             } catch (e: Exception) { error = e.message ?: "นำเข้าข้อมูลไม่สำเร็จ" }
