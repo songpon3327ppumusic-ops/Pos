@@ -49,7 +49,14 @@ Deno.serve(async (req) => {
       return new Response("Webhook is not configured", { status: 503 });
     }
 
+    const declaredLength = Number(req.headers.get("content-length") ?? "0");
+    if (Number.isFinite(declaredLength) && declaredLength > 2_000_000) {
+      return new Response("Webhook payload too large", { status: 413 });
+    }
     const rawBody = await req.text();
+    if (new TextEncoder().encode(rawBody).byteLength > 2_000_000) {
+      return new Response("Webhook payload too large", { status: 413 });
+    }
     const signature = req.headers.get("Stripe-Signature") ?? "";
     if (!(await verifyStripeSignature(rawBody, signature, webhookSecret))) {
       return new Response("Invalid Stripe signature", { status: 400 });
@@ -61,6 +68,58 @@ Deno.serve(async (req) => {
     }
     const object = event.data?.object ?? {};
     const admin = createClient(supabaseUrl, serviceRole);
+
+    // Store POS direct charges arrive as Connect events on the same signed webhook endpoint.
+    if (event.account && ["checkout.session.completed", "checkout.session.async_payment_succeeded", "checkout.session.async_payment_failed", "checkout.session.expired"].includes(event.type) && object.metadata?.sale_id && object.metadata?.organization_id) {
+      const organizationId = String(object.metadata.organization_id);
+      const saleId = String(object.metadata.sale_id);
+      const { data: paymentSettings, error: settingsError } = await admin.from("store_payment_settings")
+        .select("stripe_connect_account_id").eq("organization_id", organizationId).maybeSingle();
+      if (settingsError) throw settingsError;
+      if (!paymentSettings || paymentSettings.stripe_connect_account_id !== event.account) {
+        throw new Error("Stripe connected account does not match this store");
+      }
+      const { data: previousEvent, error: previousError } = await admin.from("pos_payment_events")
+        .select("id").eq("stripe_event_id", event.id).maybeSingle();
+      if (previousError) throw previousError;
+      if (previousEvent) return Response.json({ received: true, duplicate: true, payment: "pos" });
+      const { data: sale, error: saleError } = await admin.from("sales")
+        .select("id,total,payment_status,payment_method,stripe_checkout_session_id").eq("id", saleId).eq("organization_id", organizationId).single();
+      if (saleError) throw saleError;
+      if (sale.payment_method !== "Stripe Online") throw new Error("Sale is not a Stripe POS payment");
+      // Ignore stale sessions after a newer checkout attempt has been claimed.
+      if (sale.stripe_checkout_session_id !== object.id) {
+        const { error: staleEventError } = await admin.from("pos_payment_events").insert({
+          stripe_event_id: event.id, organization_id: organizationId, sale_id: saleId, event_type: event.type,
+        });
+        if (staleEventError && staleEventError.code !== "23505") throw staleEventError;
+        return Response.json({ received: true, stale_session: true });
+      }
+      if (event.type === "checkout.session.expired" || event.type === "checkout.session.async_payment_failed") {
+        if (sale.payment_status === "pending") {
+          const { error } = await admin.from("sales").update({ payment_status: "failed", status: "payment_failed", stripe_checkout_session_id: null, payment_attempt_started_at: null })
+            .eq("id", saleId).eq("organization_id", organizationId).eq("payment_status", "pending").eq("stripe_checkout_session_id", object.id);
+          if (error) throw error;
+        }
+      } else {
+        if (object.payment_status !== "paid") {
+          return Response.json({ received: true, payment: "awaiting_settlement" });
+        }
+        if (object.mode !== "payment" || object.currency !== "thb" || Number(object.amount_total) !== Math.round(Number(sale.total) * 100)) {
+          throw new Error("Stripe amount or currency does not match the POS sale");
+        }
+        const { error } = await admin.from("sales").update({
+          payment_status: "paid", status: "completed", paid_at: new Date().toISOString(),
+          amount_tendered: Number(sale.total), payment_ref: object.payment_intent ?? object.id, payment_attempt_started_at: null,
+        }).eq("id", saleId).eq("organization_id", organizationId).eq("stripe_checkout_session_id", object.id).in("payment_status", ["pending", "failed"]);
+        if (error) throw error;
+      }
+      const { error: eventError } = await admin.from("pos_payment_events").insert({
+        stripe_event_id: event.id, organization_id: organizationId, sale_id: saleId, event_type: event.type,
+      });
+      if (eventError && eventError.code !== "23505") throw eventError;
+      return Response.json({ received: true, payment: "pos" });
+    }
 
     // Stripe retries are expected. A recorded event is acknowledged without
     // replaying side effects. Events are inserted only after successful processing.
