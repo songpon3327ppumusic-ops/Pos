@@ -1342,7 +1342,7 @@ private fun SettingsScreen(
         AlertDialog(
             onDismissRequest = { if (!busy) deleteConfirm = false },
             title = { Text("ยืนยันลบบัญชีถาวร") },
-            text = { Text("การลบบัญชีไม่สามารถย้อนกลับได้ หากคุณเป็นเจ้าของร้าน ระบบจะลบข้อมูลร้านที่คุณเป็นเจ้าของ รวมถึงสินค้า พนักงาน ยอดขาย และข้อมูลที่เกี่ยวข้องทั้งหมด กรุณาส่งออก JSON ก่อนดำเนินการ") },
+            text = { Text("การลบบัญชีไม่สามารถย้อนกลับได้ ร้านที่คุณเป็นเจ้าของคนเดียวจะถูกลบทั้งร้านและไฟล์ที่เกี่ยวข้อง หากร้านมีเจ้าของร่วม ระบบจะเก็บร้านนั้นไว้ หากยังมีพนักงานแต่ไม่มีเจ้าของคนอื่น คุณต้องโอนสิทธิ์เจ้าของก่อน กรุณาส่งออกข้อมูลก่อนดำเนินการ") },
             confirmButton = {
                 TextButton(enabled = !busy, onClick = {
                     scope.launch {
@@ -1468,7 +1468,7 @@ private fun SettingsScreen(
             Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("สำรองและกู้คืนข้อมูลร้าน", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text("ส่งออกข้อมูลร้านเป็น JSON หรือรวมข้อมูลจากไฟล์สำรองเข้าร้านนี้ โดยไม่เขียนทับรายการที่มีอยู่")
+                    Text("ส่งออกข้อมูลร้านเป็น JSON หรือรวมข้อมูลจากไฟล์สำรองเข้าร้านนี้โดยไม่เขียนทับรายการเดิม ไฟล์สำรองมีข้อมูลลูกค้า พนักงาน เงินเดือน และเลขบัญชี ควรเก็บในที่ปลอดภัย")
                     OutlinedButton(enabled = !busy, onClick = {
                         scope.launch {
                             busy = true; error = null
