@@ -74,7 +74,13 @@ data class StoreEmployee(
     val position: String? = null,
     val department: String? = null,
     @SerialName("employment_type") val employmentType: String? = null,
-    @SerialName("is_active") val isActive: Boolean = true
+    @SerialName("is_active") val isActive: Boolean = true,
+    @SerialName("base_salary") val baseSalary: Double = 0.0,
+    @SerialName("wage_rate") val wageRate: Double = 0.0,
+    @SerialName("overtime_hourly_rate") val overtimeHourlyRate: Double = 0.0,
+    @SerialName("position_allowance") val positionAllowance: Double = 0.0,
+    @SerialName("regular_allowance") val regularAllowance: Double = 0.0,
+    @SerialName("social_security_amount") val socialSecurityAmount: Double = 0.0
 )
 
 @Serializable
@@ -122,6 +128,21 @@ data class AttendanceRecord(
     @SerialName("worked_minutes") val workedMinutes: Int = 0,
     @SerialName("late_minutes") val lateMinutes: Int = 0,
     val status: String = "present"
+)
+
+
+@Serializable
+data class StorePaymentSettings(
+    @SerialName("organization_id") val organizationId: String,
+    @SerialName("cash_enabled") val cashEnabled: Boolean = true,
+    @SerialName("promptpay_enabled") val promptpayEnabled: Boolean = false,
+    @SerialName("bank_transfer_enabled") val bankTransferEnabled: Boolean = false,
+    @SerialName("promptpay_id") val promptpayId: String? = null,
+    @SerialName("promptpay_name") val promptpayName: String? = null,
+    @SerialName("bank_name") val bankName: String? = null,
+    @SerialName("bank_account_name") val bankAccountName: String? = null,
+    @SerialName("bank_account_number") val bankAccountNumber: String? = null,
+    @SerialName("qr_image_path") val qrImagePath: String? = null
 )
 
 class StoreFlowRepository(private val client: SupabaseClient) {
@@ -221,6 +242,71 @@ class StoreFlowRepository(private val client: SupabaseClient) {
         val params = buildJsonObject { put("p_organization_id", organizationId) }
         return client.postgrest.rpc("storeflow_clock_out", params).decodeAs<String>()
     }
+
+
+    suspend fun signUp(email: String, password: String) {
+        require(email.contains("@") && password.length >= 8) { "กรอกอีเมลและรหัสผ่านอย่างน้อย 8 ตัวอักษร" }
+        client.auth.signUpWith(io.github.jan.supabase.auth.providers.builtin.Email) {
+            this.email = email.trim()
+            this.password = password
+        }
+    }
+
+    suspend fun createStore(storeName: String): String {
+        val params = buildJsonObject { put("p_store_name", storeName.trim()) }
+        return client.postgrest.rpc("storeflow_create_store", params).decodeAs<String>()
+    }
+
+    suspend fun joinStore(inviteCode: String): String {
+        val params = buildJsonObject { put("p_invite_code", inviteCode.trim()) }
+        return client.postgrest.rpc("storeflow_join_by_invite", params).decodeAs<String>()
+    }
+
+    suspend fun storePaymentSettings(organizationId: String): StorePaymentSettings? =
+        client.from("store_payment_settings").select {
+            filter { eq("organization_id", organizationId) }
+            limit(1)
+        }.decodeList<StorePaymentSettings>().firstOrNull()
+
+    suspend fun saveStorePaymentSettings(settings: StorePaymentSettings) {
+        val userId = client.auth.currentUserOrNull()?.id ?: error("กรุณาเข้าสู่ระบบใหม่")
+        val value = settings.copy(
+            promptpayId = settings.promptpayId?.filter { it.isDigit() }?.ifBlank { null },
+            promptpayName = settings.promptpayName?.trim()?.ifBlank { null }
+        )
+        client.from("store_payment_settings").insert(
+            value.copy(),
+            upsert = true,
+            onConflict = "organization_id"
+        )
+    }
+
+    suspend fun updateEmployeeSalary(
+        employeeId: String,
+        baseSalary: Double,
+        wageRate: Double,
+        overtimeRate: Double,
+        positionAllowance: Double,
+        regularAllowance: Double,
+        socialSecurity: Double
+    ) {
+        require(listOf(baseSalary, wageRate, overtimeRate, positionAllowance, regularAllowance, socialSecurity).all { it >= 0.0 }) {
+            "จำนวนเงินต้องไม่ติดลบ"
+        }
+        client.from("employees").update({
+            set("base_salary", baseSalary)
+            set("wage_rate", wageRate)
+            set("overtime_hourly_rate", overtimeRate)
+            set("position_allowance", positionAllowance)
+            set("regular_allowance", regularAllowance)
+            set("social_security_amount", socialSecurity)
+        }) {
+            filter { eq("id", employeeId) }
+        }
+    }
+
+    suspend fun ownerInviteCode(): String =
+        client.postgrest.rpc("get_store_invite_code").decodeAs<String>()
 
     suspend fun signIn(email: String, password: String) {
         client.auth.signInWith(io.github.jan.supabase.auth.providers.builtin.Email) {
