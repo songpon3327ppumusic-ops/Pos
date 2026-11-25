@@ -589,6 +589,7 @@ private fun WorkforceScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var addingEmployee by remember { mutableStateOf(false) }
     var schedulingFor by remember { mutableStateOf<StoreEmployee?>(null) }
+    var salaryFor by remember { mutableStateOf<StoreEmployee?>(null) }
 
     suspend fun refresh() {
         busy = true
@@ -701,7 +702,10 @@ private fun WorkforceScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 style = MaterialTheme.typography.bodySmall)
                         }
-                        TextButton(onClick = { schedulingFor = employee }) { Text("จัดกะ") }
+                        if (canManage) {
+                            TextButton(onClick = { salaryFor = employee }) { Text("เงินเดือน") }
+                            TextButton(onClick = { schedulingFor = employee }) { Text("จัดกะ") }
+                        }
                     }
                 }
             }
@@ -733,6 +737,17 @@ private fun WorkforceScreen(
             refresh()
         }
     )
+    salaryFor?.let { employee ->
+        SalaryDialog(
+            employee = employee,
+            onDismiss = { salaryFor = null },
+            onSave = { base, wage, ot, position, regular, social ->
+                repo.updateEmployeeSalary(employee.id, base, wage, ot, position, regular, social)
+                salaryFor = null
+                refresh()
+            }
+        )
+    }
     schedulingFor?.let { employee ->
         ScheduleShiftDialog(
             employee = employee,
@@ -771,7 +786,7 @@ private fun SelfAttendanceScreen(
                     Text(employee.employeeCode, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(shift?.shiftName ?: "วันนี้ยังไม่มีกะงาน")
                     if (shift != null) {
-                        Text("${shift.startsAt.take(16).replace("T", " ")} – ${shift.endsAt.take(16).replace("T", " ")}")
+                        Text("${formatThaiDateTime(shift.startsAt)} – ${formatThaiDateTime(shift.endsAt)}")
                     }
                     HorizontalDivider()
                     Text("เวลาเข้า: ${attendance?.clockIn?.let { formatThaiDateTime(it) } ?: "ยังไม่ลงเวลา"}")
@@ -798,6 +813,58 @@ private fun SelfAttendanceScreen(
         }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
     }
+}
+
+
+@Composable
+private fun SalaryDialog(
+    employee: StoreEmployee,
+    onDismiss: () -> Unit,
+    onSave: suspend (Double, Double, Double, Double, Double, Double) -> Unit
+) {
+    val scope = rememberCoroutineScope()
+    var base by remember { mutableStateOf(employee.baseSalary.toString()) }
+    var wage by remember { mutableStateOf(employee.wageRate.toString()) }
+    var overtime by remember { mutableStateOf(employee.overtimeHourlyRate.toString()) }
+    var position by remember { mutableStateOf(employee.positionAllowance.toString()) }
+    var regular by remember { mutableStateOf(employee.regularAllowance.toString()) }
+    var social by remember { mutableStateOf(employee.socialSecurityAmount.toString()) }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("จัดการเงินเดือน • ${employee.fullName}") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                OutlinedTextField(base, { base = it }, label = { Text("เงินเดือนพื้นฐาน / เดือน") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), singleLine = true)
+                OutlinedTextField(wage, { wage = it }, label = { Text("ค่าแรงต่อวันหรือชั่วโมง") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), singleLine = true)
+                OutlinedTextField(overtime, { overtime = it }, label = { Text("ค่าล่วงเวลาต่อชั่วโมง") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), singleLine = true)
+                OutlinedTextField(position, { position = it }, label = { Text("ค่าตำแหน่ง") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), singleLine = true)
+                OutlinedTextField(regular, { regular = it }, label = { Text("เบี้ยเลี้ยงประจำ") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), singleLine = true)
+                OutlinedTextField(social, { social = it }, label = { Text("ประกันสังคม") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), singleLine = true)
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = !busy, onClick = {
+                val values = listOf(base, wage, overtime, position, regular, social).map { it.toDoubleOrNull() }
+                if (values.any { it == null || it < 0.0 }) error = "กรุณากรอกตัวเลขตั้งแต่ 0 ขึ้นไป"
+                else scope.launch {
+                    busy = true
+                    try { onSave(values[0]!!, values[1]!!, values[2]!!, values[3]!!, values[4]!!, values[5]!!) }
+                    catch (e: Exception) { error = e.message ?: "บันทึกเงินเดือนไม่สำเร็จ" }
+                    finally { busy = false }
+                }
+            }) { Text(if (busy) "กำลังบันทึก..." else "บันทึก") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("ยกเลิก") } }
+    )
 }
 
 @Composable
