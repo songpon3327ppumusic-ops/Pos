@@ -654,6 +654,38 @@ private fun PosScreen(
 }
 
 @Composable
+private fun CashDialog(total: Double, onDismiss: () -> Unit, onPay: (Double) -> Unit) {
+    var received by remember { mutableStateOf(total.toString()) }
+    val amount = received.toDoubleOrNull() ?: 0.0
+    val change = amount - total
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("รับชำระเงินสด") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("ยอดที่ต้องชำระ", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(money(total), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                OutlinedTextField(
+                    value = received, onValueChange = { received = it.filter { ch -> ch.isDigit() || ch == '.' } },
+                    label = { Text("จำนวนเงินที่รับมา") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(if (change >= 0) "เงินทอน ${money(change)}" else "เงินขาด ${money(-change)}",
+                    color = if (change >= 0) Color(0xFF027A48) else MaterialTheme.colorScheme.error,
+                    fontWeight = FontWeight.SemiBold)
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onPay(amount) }, enabled = amount >= total && amount > 0) {
+                Text("ยืนยันรับเงิน")
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("ยกเลิก") } }
+    )
+}
+
+@Composable
 private fun PromptPayCheckoutDialog(
     organizationId: String,
     total: Double,
@@ -687,7 +719,7 @@ private fun PromptPayCheckoutDialog(
                     val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
                         ?: error("ไฟล์รูปภาพไม่ถูกต้อง")
                     val pixels = IntArray(bitmap.width * bitmap.height)
-                    bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.height)
+                    bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
                     val hints = EnumMap<DecodeHintType, Any>(DecodeHintType::class.java).apply {
                         put(DecodeHintType.TRY_HARDER, true)
                         put(DecodeHintType.POSSIBLE_FORMATS, listOf(BarcodeFormat.QR_CODE))
