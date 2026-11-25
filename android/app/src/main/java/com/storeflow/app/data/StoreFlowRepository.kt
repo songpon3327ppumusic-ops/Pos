@@ -64,6 +64,7 @@ data class ProductInsert(
     val price: Double,
     val stock: Double = 0.0,
     @SerialName("min_stock") val minStock: Double = 0.0,
+    val barcode: String? = null,
     @SerialName("is_active") val isActive: Boolean = true
 )
 
@@ -449,12 +450,14 @@ class StoreFlowRepository(private val client: SupabaseClient) {
         name: String,
         category: String,
         price: Double,
-        minStock: Double
+        minStock: Double,
+        initialStock: Double = 0.0,
+        barcode: String? = null
     ) {
         require(sku.isNotBlank()) { "กรุณากรอกรหัสสินค้า" }
         require(name.isNotBlank()) { "กรุณากรอกชื่อสินค้า" }
         require(price >= 0) { "ราคาต้องไม่ติดลบ" }
-        require(minStock >= 0) { "จุดเตือนสต็อกต้องไม่ติดลบ" }
+        require(minStock >= 0 && initialStock >= 0) { "จำนวนสต็อกต้องไม่ติดลบ" }
         client.from("products").insert(
             ProductInsert(
                 organizationId = organizationId,
@@ -462,7 +465,9 @@ class StoreFlowRepository(private val client: SupabaseClient) {
                 name = name.trim(),
                 category = category.trim().ifBlank { null },
                 price = price,
-                minStock = minStock
+                stock = initialStock,
+                minStock = minStock,
+                barcode = barcode?.trim()?.ifBlank { null }
             )
         )
     }
