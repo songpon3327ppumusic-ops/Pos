@@ -178,10 +178,10 @@ class StoreFlowRepository(private val client: SupabaseClient) {
     ) {
         val zone = ZoneId.of("Asia/Bangkok")
         val start = java.time.LocalDateTime.parse(
-            "$shiftDateT$startTime"
+            "${shiftDate}T${startTime}"
         ).atZone(zone).toInstant().toString()
         val end = java.time.LocalDateTime.parse(
-            "$shiftDateT$endTime"
+            "${shiftDate}T${endTime}"
         ).atZone(zone).toInstant().toString()
         require(java.time.Instant.parse(end).isAfter(java.time.Instant.parse(start))) {
             "เวลาเลิกกะต้องอยู่หลังเวลาเริ่มกะ"
