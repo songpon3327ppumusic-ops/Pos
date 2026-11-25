@@ -85,7 +85,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
 
     // Google Play Billing; product IDs must match Play Console.
-    implementation("com.android.billingclient:billing-ktx:8.3.0")
+    implementation("com.android.billingclient:billing-ktx:9.1.0")
 
     // CameraX and on-device barcode scanning; CAMERA is requested only on scan action.
     val cameraX = "1.5.1"
