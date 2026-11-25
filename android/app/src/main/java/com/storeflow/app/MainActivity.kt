@@ -1606,14 +1606,14 @@ private fun SettingsScreen(
                     Text("ทดลองใช้ฟรี 7 วัน โดยนับจากวันที่สร้างร้าน")
                     val monthly = billingProducts.firstOrNull { it.productId == StoreFlowBilling.MONTHLY_PRODUCT_ID }
                     val lifetime = billingProducts.firstOrNull { it.productId == StoreFlowBilling.LIFETIME_PRODUCT_ID }
-                    Button(onClick = { billingManager.buy(StoreFlowBilling.MONTHLY_PRODUCT_ID) }, enabled = monthly != null && !busy, modifier = Modifier.fillMaxWidth()) {
+                    Button(onClick = { billingManager.buy(StoreFlowBilling.MONTHLY_PRODUCT_ID) }, enabled = canManage && monthly != null && !busy, modifier = Modifier.fillMaxWidth()) {
                         Text("สมัครรายเดือน" + (monthly?.subscriptionOfferDetails?.firstOrNull()?.pricingPhases?.pricingPhaseList?.lastOrNull()?.formattedPrice?.let { " • " + it } ?: ""))
                     }
-                    Button(onClick = { billingManager.buy(StoreFlowBilling.LIFETIME_PRODUCT_ID) }, enabled = lifetime != null && !busy, modifier = Modifier.fillMaxWidth()) {
+                    Button(onClick = { billingManager.buy(StoreFlowBilling.LIFETIME_PRODUCT_ID) }, enabled = canManage && lifetime != null && !busy, modifier = Modifier.fillMaxWidth()) {
                         Text("ซื้อขาดตลอดชีพ ฿2,590" + (lifetime?.oneTimePurchaseOfferDetails?.formattedPrice?.let { " • " + it } ?: ""))
                     }
-                    OutlinedButton(onClick = { billingManager.restorePurchases() }, modifier = Modifier.fillMaxWidth()) { Text("กู้คืนการซื้อ (Restore Purchases)") }
-                    OutlinedButton(onClick = { billingManager.openSubscriptions() }, modifier = Modifier.fillMaxWidth()) { Text("จัดการการสมัครสมาชิก") }
+                    OutlinedButton(onClick = { billingManager.restorePurchases() }, enabled = canManage, modifier = Modifier.fillMaxWidth()) { Text("กู้คืนการซื้อ (Restore Purchases)") }
+                    OutlinedButton(onClick = { billingManager.openSubscriptions() }, enabled = canManage, modifier = Modifier.fillMaxWidth()) { Text("จัดการการสมัครสมาชิก") }
                     Text(billingStatus, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text("สิทธิ์สมาชิกจะเปลี่ยนหลังเซิร์ฟเวอร์ตรวจสอบ Purchase Token กับ Google Play แล้วเท่านั้น", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
