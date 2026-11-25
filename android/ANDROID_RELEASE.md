@@ -38,6 +38,6 @@ Open Actions → Build StoreFlow Android → Run workflow, enable `build_release
 
 ## 5. Important current implementation status
 
-The workflow and native Android project foundation are in place. The current Kotlin UI is still a starter shell: Login/signup, owner/staff invitation, live dashboard, POS checkout, barcode camera flow, inventory, shifts/payroll and payment QR screens have not yet been implemented against the production schema. Do not publish this starter build as a production POS app until those flows, RLS permissions, runtime permissions and real-device tests are complete.
+The workflow and native Android project foundation are in place. The Kotlin app now has an initial Supabase email/password login and owner-signup screen, and calls the existing guarded bootstrap_store_owner RPC after login. Staff invitation/registration is not yet implemented because the app does not yet call a verified invite-redemption flow. Live dashboard, POS checkout, barcode camera flow, inventory, shifts/payroll and payment QR screens are still not connected to the production schema. Do not publish this starter build as a production POS app until those flows, RLS permissions, runtime permissions and real-device tests are complete.
 
 The app manifest declares camera and Bluetooth permissions. Android 6+ and Android 12+ require runtime permission requests before accessing camera/Bluetooth hardware; declarations alone do not grant access.
