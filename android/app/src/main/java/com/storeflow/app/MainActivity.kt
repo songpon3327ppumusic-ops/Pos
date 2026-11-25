@@ -149,6 +149,7 @@ private fun StoreFlowRoot() {
 
 @Composable
 private fun LoginScreen() {
+    val context = LocalContext.current
     val repo = remember { StoreFlowRepository(StoreFlowSupabase.client) }
     val scope = rememberCoroutineScope()
     var email by rememberSaveable { mutableStateOf("") }
@@ -209,7 +210,7 @@ private fun LoginScreen() {
                         Checkbox(checked = consentAccepted, onCheckedChange = { consentAccepted = it })
                         Text("ฉันยินยอมให้ประมวลผลข้อมูลส่วนบุคคล และยอมรับข้อกำหนดการใช้งานกับนโยบายความเป็นส่วนตัว", style = MaterialTheme.typography.bodySmall)
                     }
-                    TextButton(onClick = { runCatching { (LocalContext.current as Context).startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://benz-verse.com/storeflow-privacy"))) } }) {
+                    TextButton(onClick = { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://benz-verse.com/storeflow-privacy")) ) } }) {
                         Text("อ่านนโยบายความเป็นส่วนตัว")
                     }
                 }
