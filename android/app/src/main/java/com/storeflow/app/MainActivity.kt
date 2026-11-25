@@ -16,7 +16,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.PickVisualMediaRequest
 import com.storeflow.app.billing.StoreFlowBilling
-import android.app.Activity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
@@ -1259,6 +1258,15 @@ private fun SettingsScreen(
     var deleteConfirm by remember { mutableStateOf(false) }
     var backupJson by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
+    var billingStatus by remember { mutableStateOf("กำลังเตรียมระบบ Google Play") }
+    var billingProducts by remember { mutableStateOf(emptyList<com.android.billingclient.api.ProductDetails>()) }
+    val billingManager = remember(store.id) {
+        StoreFlowBilling(context, StoreFlowSupabase.client, store.id) { status -> billingStatus = status }
+    }
+    DisposableEffect(billingManager) {
+        (context as? Activity)?.let { host -> billingManager.connect(host) { billingProducts = it } }
+        onDispose { billingManager.close() }
+    }
     val exportBackupLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
     ) { uri ->
@@ -1429,15 +1437,30 @@ private fun SettingsScreen(
         }
         item {
             Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("แพ็กเกจสมาชิก", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text("สถานะ: ${subscription?.status ?: "ยังไม่พบข้อมูล"}")
-                    Text("แพ็กเกจปัจจุบัน: ${subscription?.planId ?: "-"}")
-                    subscription?.trialEndsAt?.let { Text("สิ้นสุดทดลองใช้ฟรี: ${formatThaiDateTime(it)}") }
-                    Text("ทดลองใช้ฟรี 7 วัน")
-                    Text("รายเดือน: เลือกตามแพ็กเกจ")
-                    Text("ซื้อขาด: ฿2,590 (ราคาปกติ ฿3,990)")
-
+                    val statusLabel = when (subscription?.status?.lowercase()) {
+                        "active" -> "ใช้งานอยู่"; "trialing", "trial" -> "ทดลองใช้ฟรี"
+                        "past_due" -> "รอชำระเงิน"; "canceled", "cancelled" -> "ยกเลิกแล้ว"
+                        "expired" -> "หมดอายุ"; "free" -> "แพ็กเกจฟรี"; else -> "ยังไม่พบข้อมูลสมาชิก"
+                    }
+                    Text("สถานะ: " + statusLabel, fontWeight = FontWeight.SemiBold)
+                    Text("แพ็กเกจปัจจุบัน: " + (subscription?.planId ?: "-"))
+                    subscription?.trialEndsAt?.let { Text("สิ้นสุดทดลองใช้ฟรี: " + formatThaiDateTime(it)) }
+                    subscription?.currentPeriodEnd?.let { Text("วันหมดอายุ / ต่ออายุ: " + formatThaiDateTime(it)) }
+                    Text("ทดลองใช้ฟรี 7 วัน โดยนับจากวันที่สร้างร้าน")
+                    val monthly = billingProducts.firstOrNull { it.productId == StoreFlowBilling.MONTHLY_PRODUCT_ID }
+                    val lifetime = billingProducts.firstOrNull { it.productId == StoreFlowBilling.LIFETIME_PRODUCT_ID }
+                    Button(onClick = { billingManager.buy(StoreFlowBilling.MONTHLY_PRODUCT_ID) }, enabled = monthly != null && !busy, modifier = Modifier.fillMaxWidth()) {
+                        Text("สมัครรายเดือน" + (monthly?.subscriptionOfferDetails?.firstOrNull()?.pricingPhases?.pricingPhaseList?.lastOrNull()?.formattedPrice?.let { " • " + it } ?: ""))
+                    }
+                    Button(onClick = { billingManager.buy(StoreFlowBilling.LIFETIME_PRODUCT_ID) }, enabled = lifetime != null && !busy, modifier = Modifier.fillMaxWidth()) {
+                        Text("ซื้อขาดตลอดชีพ ฿2,590" + (lifetime?.oneTimePurchaseOfferDetails?.formattedPrice?.let { " • " + it } ?: ""))
+                    }
+                    OutlinedButton(onClick = { billingManager.restorePurchases() }, modifier = Modifier.fillMaxWidth()) { Text("กู้คืนการซื้อ (Restore Purchases)") }
+                    OutlinedButton(onClick = { billingManager.openSubscriptions() }, modifier = Modifier.fillMaxWidth()) { Text("จัดการการสมัครสมาชิก") }
+                    Text(billingStatus, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("สิทธิ์สมาชิกจะเปลี่ยนหลังเซิร์ฟเวอร์ตรวจสอบ Purchase Token กับ Google Play แล้วเท่านั้น", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
