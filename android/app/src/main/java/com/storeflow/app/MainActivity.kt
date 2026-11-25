@@ -119,7 +119,7 @@ private data class Tab(val label: String, val icon: androidx.compose.ui.graphics
 private val tabs = listOf(
     Tab("ภาพรวม", Icons.Default.Storefront), Tab("ขาย", Icons.Default.PointOfSale),
     Tab("สินค้า", Icons.Default.Inventory2), Tab("รายงาน", Icons.Default.BarChart),
-    Tab("ทีมงาน", Icons.Default.Groups), Tab("ตั้งค่า", Icons.Default.Settings)
+    Tab("ทีมงาน", Icons.Default.Groups), Tab("เอกสาร", Icons.Default.Description), Tab("ตั้งค่า", Icons.Default.Settings)
 )
 
 @Composable
@@ -375,6 +375,7 @@ private fun Workspace() {
             3 -> ReportsScreen(Modifier.padding(padding), metrics, products)
             4 -> WorkforceScreen(Modifier.padding(padding), active.id, repo,
                 role in listOf("owner", "admin", "hr"))
+            5 -> DocumentsScreen(Modifier.padding(padding), active.id, DocumentsRepository(client))
             else -> SettingsScreen(Modifier.padding(padding), active, role,
                 client.auth.currentUserOrNull()?.email.orEmpty(), repo,
                 onSwitch = { store = null },
@@ -397,7 +398,7 @@ private fun Dashboard(modifier: Modifier, storeName: String, metrics: StoreMetri
                     Text("ยอดขายวันนี้", color = Color(0xFFD1E9E2))
                     Text(money(metrics.todaySales), color = Color.White,
                         style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                    Text("ข้อมูลจากรายการขายจริงใน Supabase", color = Color(0xFFD1E9E2))
+                    Text("ข้อมูลยอดขายจากร้านค้า • ซิงก์เมื่อเชื่อมต่ออินเทอร์เน็ต", color = Color(0xFFD1E9E2))
                 }
             }
         }
