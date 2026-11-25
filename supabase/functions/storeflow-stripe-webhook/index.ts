@@ -220,7 +220,7 @@ Deno.serve(async (req) => {
         const item = subscription.items?.data?.[0];
         const billingInterval = subscription.metadata?.billing_interval ?? "month";
         const { data: configuredPlan, error: configuredPlanError } = await admin.from("subscription_plans")
-          .select("stripe_monthly_price_id,stripe_yearly_price_id,monthly_price_thb,yearly_price_thb").eq("id", planId).eq("is_active", true).maybeSingle();
+          .select("stripe_monthly_price_id,stripe_yearly_price_id,monthly_price_thb,yearly_price_thb").eq("id", planId).maybeSingle();
         if (configuredPlanError) throw configuredPlanError;
         const expectedPriceId = billingInterval === "year" ? configuredPlan?.stripe_yearly_price_id : configuredPlan?.stripe_monthly_price_id;
         const expectedAmount = billingInterval === "year" ? configuredPlan?.yearly_price_thb : configuredPlan?.monthly_price_thb;
