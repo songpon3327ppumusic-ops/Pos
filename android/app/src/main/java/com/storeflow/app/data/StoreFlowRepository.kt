@@ -69,6 +69,19 @@ data class ProductInsert(
 )
 
 @Serializable
+data class ProductUpdate(
+    val sku: String,
+    val name: String,
+    val category: String? = null,
+    val price: Double,
+    @SerialName("min_stock") val minStock: Double,
+    val barcode: String? = null
+)
+
+@Serializable
+data class ProductArchiveUpdate(@SerialName("is_active") val isActive: Boolean = false)
+
+@Serializable
 data class StoreSaleSummary(
     val total: Double,
     @SerialName("created_at") val createdAt: String
@@ -470,6 +483,24 @@ class StoreFlowRepository(private val client: SupabaseClient) {
                 barcode = barcode?.trim()?.ifBlank { null }
             )
         )
+    }
+
+    suspend fun updateProduct(organizationId: String, productId: String, sku: String, name: String,
+        category: String, price: Double, minStock: Double, barcode: String?) {
+        require(sku.isNotBlank() && name.isNotBlank()) { "กรุณากรอกรหัสและชื่อสินค้า" }
+        require(price >= 0 && minStock >= 0) { "ราคาและจุดเตือนสต็อกต้องไม่ติดลบ" }
+        client.from("products").update(ProductUpdate(
+            sku = sku.trim(), name = name.trim(), category = category.trim().ifBlank { null },
+            price = price, minStock = minStock, barcode = barcode?.trim()?.ifBlank { null }
+        )) {
+            filter { eq("id", productId); eq("organization_id", organizationId) }
+        }
+    }
+
+    suspend fun archiveProduct(organizationId: String, productId: String) {
+        client.from("products").update(ProductArchiveUpdate()) {
+            filter { eq("id", productId); eq("organization_id", organizationId) }
+        }
     }
 
     suspend fun adjustStock(organizationId: String, productId: String, delta: Double, note: String) {
