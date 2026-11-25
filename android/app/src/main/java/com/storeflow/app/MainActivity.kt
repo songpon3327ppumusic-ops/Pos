@@ -31,6 +31,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.NumberFormat
 import java.util.Locale
+import java.time.LocalDate
+import java.time.ZoneId
 
 private val Page = Color(0xFFF6F8FB)
 private val Green = Color(0xFF123C35)
@@ -53,7 +55,7 @@ private data class Tab(val label: String, val icon: androidx.compose.ui.graphics
 private val tabs = listOf(
     Tab("ภาพรวม", Icons.Default.Storefront), Tab("ขาย", Icons.Default.PointOfSale),
     Tab("สินค้า", Icons.Default.Inventory2), Tab("รายงาน", Icons.Default.BarChart),
-    Tab("ตั้งค่า", Icons.Default.Settings)
+    Tab("ทีมงาน", Icons.Default.Groups), Tab("ตั้งค่า", Icons.Default.Settings)
 )
 
 @Composable
@@ -233,6 +235,8 @@ private fun Workspace() {
             2 -> ProductsScreen(Modifier.padding(padding), active.id, products, repo,
                 role in listOf("owner", "admin", "manager")) { scope.launch { refresh() } }
             3 -> ReportsScreen(Modifier.padding(padding), metrics, products)
+            4 -> WorkforceScreen(Modifier.padding(padding), active.id, repo,
+                role in listOf("owner", "admin", "hr"))
             else -> SettingsScreen(Modifier.padding(padding), active, role,
                 client.auth.currentUserOrNull()?.email.orEmpty(),
                 onSwitch = { store = null },
@@ -458,6 +462,255 @@ private fun CashDialog(total: Double, onDismiss: () -> Unit, onPay: (Double) -> 
             if (cash == null || cash < total) error = "รับเงินไม่ครบยอด" else onPay(cash)
         }) { Text("ยืนยันการขาย") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("ยกเลิก") } })
+}
+
+
+@Composable
+private fun WorkforceScreen(
+    modifier: Modifier,
+    organizationId: String,
+    repo: StoreFlowRepository,
+    canManage: Boolean
+) {
+    val scope = rememberCoroutineScope()
+    val today = remember { LocalDate.now(ZoneId.of("Asia/Bangkok")).toString() }
+    var employees by remember { mutableStateOf(emptyList<StoreEmployee>()) }
+    var shifts by remember { mutableStateOf(emptyList<StoreShift>()) }
+    var attendance by remember { mutableStateOf(emptyList<AttendanceRecord>()) }
+    var loading by remember { mutableStateOf(true) }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var addingEmployee by remember { mutableStateOf(false) }
+    var schedulingFor by remember { mutableStateOf<StoreEmployee?>(null) }
+
+    suspend fun refresh() {
+        busy = true
+        error = null
+        try {
+            val data = withContext(Dispatchers.IO) {
+                Triple(
+                    repo.employees(organizationId),
+                    repo.shifts(organizationId, today),
+                    repo.attendanceToday(organizationId, today)
+                )
+            }
+            employees = data.first
+            shifts = data.second
+            attendance = data.third
+        } catch (e: Exception) {
+            error = e.message ?: "โหลดข้อมูลบุคลากรไม่สำเร็จ"
+        } finally {
+            busy = false
+            loading = false
+        }
+    }
+
+    LaunchedEffect(organizationId) { refresh() }
+
+    if (!canManage) {
+        Column(modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(Icons.Default.Lock, null, modifier = Modifier.size(44.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("ไม่มีสิทธิ์จัดการบุคลากร", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text("เมนูนี้สำหรับเจ้าของร้าน ผู้ดูแลระบบ และฝ่าย HR",
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        return
+    }
+    if (loading) {
+        Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+        return
+    }
+
+    Column(modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+        Spacer(Modifier.height(10.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("พนักงานและกะงาน", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                Text("วันนี้ $today • ${employees.size} คน", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            IconButton(onClick = { scope.launch { refresh() } }, enabled = !busy) {
+                if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                else Icon(Icons.Default.Refresh, "รีเฟรช")
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = { addingEmployee = true }, modifier = Modifier.weight(1f)) {
+                Icon(Icons.Default.PersonAdd, null); Spacer(Modifier.width(5.dp)); Text("เพิ่มพนักงาน")
+            }
+        }
+        error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+        LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            item {
+                Text("ตารางกะวันนี้", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            }
+            if (shifts.isEmpty()) item {
+                EmptyCard("ยังไม่มีกะงานวันนี้", "เลือกพนักงานแล้วกดจัดกะเพื่อเพิ่มตารางเวลาทำงาน")
+            }
+            items(shifts, key = { it.id }) { shift ->
+                val employee = employees.firstOrNull { it.id == shift.employeeId }
+                Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                    Column(Modifier.fillMaxWidth().padding(14.dp)) {
+                        Text(employee?.fullName ?: "พนักงาน", fontWeight = FontWeight.SemiBold)
+                        Text(shift.shiftName, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("${shift.startsAt.take(16).replace("T", " ")} – ${shift.endsAt.take(16).replace("T", " ")}")
+                        Text("พัก ${shift.breakMinutes} นาที", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+            item {
+                Spacer(Modifier.height(4.dp))
+                Text("พนักงาน", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            }
+            if (employees.isEmpty()) item { EmptyCard("ยังไม่มีพนักงาน", "เพิ่มข้อมูลพนักงานเพื่อจัดตารางกะงาน") }
+            items(employees, key = { it.id }) { employee ->
+                Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                    Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(employee.fullName, fontWeight = FontWeight.SemiBold)
+                            Text("${employee.employeeCode} • ${employee.position ?: "พนักงาน"}",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodySmall)
+                        }
+                        TextButton(onClick = { schedulingFor = employee }) { Text("จัดกะ") }
+                    }
+                }
+            }
+            item {
+                Spacer(Modifier.height(4.dp))
+                Text("บันทึกเวลาเข้างานวันนี้", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            }
+            if (attendance.isEmpty()) item { EmptyCard("ยังไม่มีรายการลงเวลา", "เมื่อพนักงานลงเวลา รายการจะแสดงที่นี่") }
+            items(attendance, key = { it.id }) { record ->
+                val employee = employees.firstOrNull { it.id == record.employeeId }
+                Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                    Column(Modifier.padding(14.dp)) {
+                        Text(employee?.fullName ?: "พนักงาน", fontWeight = FontWeight.SemiBold)
+                        Text("เข้า: ${record.clockIn?.replace("T", " ")?.take(16) ?: "ยังไม่ลงเวลา"}")
+                        Text("ออก: ${record.clockOut?.replace("T", " ")?.take(16) ?: "ยังไม่ออกกะ"}")
+                        Text("ทำงาน ${record.workedMinutes} นาที • สาย ${record.lateMinutes} นาที",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+        }
+    }
+
+    if (addingEmployee) EmployeeDialog(
+        onDismiss = { addingEmployee = false },
+        onSave = { name, position, department, type ->
+            repo.addEmployee(organizationId, name, position, department, type)
+            addingEmployee = false
+            refresh()
+        }
+    )
+    schedulingFor?.let { employee ->
+        ScheduleShiftDialog(
+            employee = employee,
+            today = today,
+            onDismiss = { schedulingFor = null },
+            onSave = { date, start, end, name, breakMinutes ->
+                repo.scheduleShift(organizationId, employee.id, date, start, end, name, breakMinutes)
+                schedulingFor = null
+                refresh()
+            }
+        )
+    }
+}
+
+@Composable
+private fun EmployeeDialog(
+    onDismiss: () -> Unit,
+    onSave: suspend (String, String, String, String) -> Unit
+) {
+    val scope = rememberCoroutineScope()
+    var name by remember { mutableStateOf("") }
+    var position by remember { mutableStateOf("") }
+    var department by remember { mutableStateOf("") }
+    var type by remember { mutableStateOf("permanent") }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("เพิ่มพนักงาน") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                OutlinedTextField(name, { name = it }, label = { Text("ชื่อ-นามสกุล") }, singleLine = true)
+                OutlinedTextField(position, { position = it }, label = { Text("ตำแหน่ง") }, singleLine = true)
+                OutlinedTextField(department, { department = it }, label = { Text("แผนก") }, singleLine = true)
+                Text("ประเภทการจ้าง")
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf("permanent" to "ประจำ", "part_time" to "พาร์ตไทม์", "daily" to "รายวัน").forEach { option ->
+                        FilterChip(selected = type == option.first, onClick = { type = option.first }, label = { Text(option.second) })
+                    }
+                }
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = !busy, onClick = {
+                if (name.isBlank()) error = "กรุณากรอกชื่อพนักงาน"
+                else scope.launch {
+                    busy = true
+                    try { onSave(name, position, department, type) }
+                    catch (e: Exception) { error = e.message ?: "เพิ่มพนักงานไม่สำเร็จ" }
+                    finally { busy = false }
+                }
+            }) { Text(if (busy) "กำลังบันทึก..." else "บันทึก") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("ยกเลิก") } }
+    )
+}
+
+@Composable
+private fun ScheduleShiftDialog(
+    employee: StoreEmployee,
+    today: String,
+    onDismiss: () -> Unit,
+    onSave: suspend (String, String, String, String, Int) -> Unit
+) {
+    val scope = rememberCoroutineScope()
+    var date by remember { mutableStateOf(today) }
+    var start by remember { mutableStateOf("09:00") }
+    var end by remember { mutableStateOf("18:00") }
+    var name by remember { mutableStateOf("กะกลางวัน") }
+    var breakMinutes by remember { mutableStateOf("60") }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("จัดกะให้ ${employee.fullName}") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                OutlinedTextField(date, { date = it }, label = { Text("วันที่ (YYYY-MM-DD)") }, singleLine = true)
+                OutlinedTextField(name, { name = it }, label = { Text("ชื่อกะ") }, singleLine = true)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(start, { start = it }, label = { Text("เริ่ม (HH:MM)") }, modifier = Modifier.weight(1f), singleLine = true)
+                    OutlinedTextField(end, { end = it }, label = { Text("เลิก (HH:MM)") }, modifier = Modifier.weight(1f), singleLine = true)
+                }
+                OutlinedTextField(breakMinutes, { breakMinutes = it }, label = { Text("เวลาพัก (นาที)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true)
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = !busy, onClick = {
+                val parsedBreak = breakMinutes.toIntOrNull()
+                val validDate = runCatching { LocalDate.parse(date) }.isSuccess
+                val validTime = Regex("^([01]\\d|2[0-3]):[0-5]\\d$").matches(start) &&
+                    Regex("^([01]\\d|2[0-3]):[0-5]\\d$").matches(end)
+                if (!validDate || !validTime || parsedBreak == null) error = "รูปแบบวันที่ เวลา หรือเวลาพักไม่ถูกต้อง"
+                else scope.launch {
+                    busy = true
+                    try { onSave(date, start, end, name, parsedBreak) }
+                    catch (e: Exception) { error = e.message ?: "สร้างกะงานไม่สำเร็จ" }
+                    finally { busy = false }
+                }
+            }) { Text(if (busy) "กำลังบันทึก..." else "สร้างกะงาน") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("ยกเลิก") } }
+    )
 }
 
 @Composable
