@@ -33,7 +33,7 @@ Restricted general store asset upload/update/delete to active owner/admin/manage
 Moved invite codes to 128-bit random values, added a 30-day expiry, and stopped the invite join RPC from automatically reactivating inactive/rejected/suspended memberships. Confirmed the generated invite code length is 32 hex characters.
 
 ### Medium — unnecessary Android permissions and local-secret ignore rules
-Removed unused CAMERA and Bluetooth permissions/features from AndroidManifest. Added a root .gitignore for local environment files, signing keys, build output and local tooling files while retaining .env.example.
+Removed unused CAMERA and Bluetooth permissions/features from AndroidManifest, explicitly enabled Supabase OAuth PKCE for Android deep links, and added a root .gitignore for local environment files, signing keys, build output and local tooling files while retaining .env.example.
 
 ### Medium — oversized or mislabeled image/backup uploads
 Capped JSON import reads at 8 MB in Android, validated QR image signatures and dimensions before upload, and restricted accepted image types to JPG/PNG/WebP.
@@ -43,7 +43,7 @@ Capped JSON import reads at 8 MB in Android, validated QR image signatures and d
 1. **Supabase Leaked Password Protection is disabled.** The Supabase Auth security advisor still reports this warning. Enable it in Supabase Dashboard → Authentication → Settings / Password Security before production. This setting was not exposed by the connected database tools, so it was not changed here.
 2. **22 authenticated SECURITY DEFINER RPCs remain flagged by the Supabase linter.** None are executable by anon, and all public SECURITY DEFINER functions have a pinned search_path. They are used for privileged business operations and must retain strict in-function user, membership, role, license, and module checks. Keep this set under review whenever RPCs are changed.
 3. **JSON backups are plaintext.** They can contain customer, employee, payroll and bank-account data. The app now warns users to protect the file, but client-side password encryption has not yet been implemented.
-4. **Google OAuth / Android deep-link verification still needs production validation.** The app uses a custom `storeflow://auth` scheme. Confirm Supabase Google provider credentials, allowed redirect URLs, PKCE callback handling and test with a second app/device. Verified HTTPS App Links are preferable where a domain can host `assetlinks.json`.
+4. **Google OAuth / Android deep-link verification still needs production validation.** The app now explicitly uses PKCE with the custom `storeflow://auth` scheme. Confirm Supabase Google provider credentials and allowed redirect URLs, then test callback handling with a second app/device. Verified HTTPS App Links are preferable where a domain can host `assetlinks.json`.
 5. **Privacy policy requires real controller/developer identity and contact details** before Play Store submission. The current policy explicitly flags this requirement; do not publish with placeholder contact information.
 6. **Release signing and Play Store readiness are unverified.** A signed AAB, keystore backup, Play App Signing, Data Safety form, target API review and Play policy review remain.
 7. **Payment-provider production validation remains.** Stripe webhook signature verification and payment-state checks are present in the deployed function, but test/live secrets, Connect webhook setup, real THB test transactions, refund/chargeback handling and settlement reconciliation need an end-to-end test.
@@ -56,7 +56,7 @@ The Supabase performance advisor's 11 unindexed foreign-key findings were addres
 - `supabase/migrations/202611250001_storeflow_security_audit_hardening.sql`
 - `supabase/migrations/202611250002_storeflow_storage_role_hardening.sql`
 - `supabase/migrations/202611250003_storeflow_invite_security.sql`
-- `supabase/functions/storeflow-delete-account/index.ts`
+- `supabase/functions/storeflow-delete-account/index.ts` (private object cleanup paginates through large folders)
 - Android manifest, repository, settings/backup UI
 - Root `.gitignore`, Dependabot and CI workflow
 
