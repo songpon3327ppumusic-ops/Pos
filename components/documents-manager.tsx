@@ -47,8 +47,8 @@ export default function DocumentsManager({supabase,organizationId,role,notify,so
  useEffect(()=>{if(sourceSaleId&&sales.some(x=>x.id===sourceSaleId)){void importSale(sourceSaleId).then(()=>onSourceSaleHandled?.());}},[sourceSaleId,sales]);
  const create=async()=>{setBusy(true);try{
   if(!party.trim())throw new Error("กรุณากรอกชื่อผู้ซื้อ/คู่ค้า");
-  const noItems=["receipt_voucher","payment_voucher","petty_cash_voucher","deposit_receipt","expense_certificate","purchase_requisition","withholding_certificate"];
-  if(!noItems.includes(type)&&items.every(i=>!i.description.trim()))throw new Error("กรุณาเพิ่มรายการอย่างน้อย 1 รายการ");
+  const noItems=["receipt_voucher","payment_voucher","petty_cash_voucher","deposit_receipt","expense_certificate","withholding_certificate"];
+  if(!noItems.includes(type)&&items.every(i=>!i.description.trim()))throw new Error("กรุณาเพิ่มรายการอย่างน้อย 1 รายการ");if(type==="withholding_certificate"&&Number(incomeBaseAmount)<=0)throw new Error("กรุณาระบุยอดเงินได้ก่อนหักภาษี");if(["receipt_voucher","payment_voucher","petty_cash_voucher","deposit_receipt","expense_certificate"].includes(type)&&Number(voucherAmount)<=0&&items.every(i=>!i.description.trim()))throw new Error("กรุณาระบุยอดเงินรับหรือจ่าย");if((type==="credit_note"||type==="debit_note")&&!notes.trim())throw new Error("กรุณาระบุเหตุผลการลดหนี้หรือเพิ่มหนี้");
   if(taxId&&!/^\d{13}$/.test(taxId))throw new Error("เลขประจำตัวผู้เสียภาษีคู่ค้าต้องมี 13 หลัก");
   if(branchCode&&!/^\d{5}$/.test(branchCode))throw new Error("รหัสสาขาต้องมี 5 หลัก");
   const metadata:any={tax_mode:taxMode,party_branch_code:branchCode,payment_terms_days:Number(paymentTerms)||0,valid_until:validUntil||null,transport_reference:transportRef||null,withholding_condition:withholdingCondition,reference_document_id:referenceDocumentId||null,delivery:{sender,receiver,checker}};
