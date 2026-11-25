@@ -1,1 +1,4 @@
 @tailwind base;@tailwind components;@tailwind utilities;*{box-sizing:border-box}body{margin:0;background:#F6F8FB;color:#172B4D;font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}button,input,select{font:inherit}button{cursor:pointer}::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-thumb{background:#DCE4EC;border-radius:10px}
+/* Native one-finger vertical scrolling for every StoreFlow scroll region (Android/iOS). */
+.storeflow-scroll{overflow-y:auto;overscroll-behavior-y:contain;-webkit-overflow-scrolling:touch;touch-action:pan-y pinch-zoom;}
+.storeflow-scroll>*{touch-action:pan-y pinch-zoom;}
