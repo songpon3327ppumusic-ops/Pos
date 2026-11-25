@@ -26,6 +26,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.storeflow.app.data.BusinessDocument
+import com.storeflow.app.data.BusinessDocumentItem
 import com.storeflow.app.data.DocumentLine
 import com.storeflow.app.data.DocumentsRepository
 import com.storeflow.app.data.StoreBusinessHeader
@@ -52,6 +53,7 @@ fun DocumentsScreen(modifier: Modifier, organizationId: String, repository: Docu
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var documents by remember { mutableStateOf(emptyList<BusinessDocument>()) }
+    var selectedItems by remember { mutableStateOf(emptyList<BusinessDocumentItem>()) }
     var businessHeader by remember { mutableStateOf<StoreBusinessHeader?>(null) }
     var logoBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var loading by remember { mutableStateOf(true) }
@@ -75,6 +77,14 @@ fun DocumentsScreen(modifier: Modifier, organizationId: String, repository: Docu
         finally { loading = false }
     }
     LaunchedEffect(organizationId) { refresh() }
+    LaunchedEffect(selected?.id) {
+        val doc = selected
+        if (doc != null) {
+            selectedItems = runCatching {
+                withContext(Dispatchers.IO) { repository.items(organizationId, doc.id) }
+            }.getOrDefault(emptyList())
+        } else selectedItems = emptyList()
+    }
     Column(modifier.fillMaxSize().padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
@@ -137,7 +147,7 @@ fun DocumentsScreen(modifier: Modifier, organizationId: String, repository: Docu
                     TextButton(onClick = {
                         scope.launch {
                             try {
-                                val file = withContext(Dispatchers.IO) { writeDocumentPdf(context, doc, businessHeader, logoBitmap) }
+                                val file = withContext(Dispatchers.IO) { writeDocumentPdf(context, doc, businessHeader, logoBitmap, selectedItems) }
                                 val uri = FileProvider.getUriForFile(context, context.packageName + ".files", file)
                                 val send = Intent(Intent.ACTION_SEND).apply { type = "application/pdf"; putExtra(Intent.EXTRA_STREAM, uri); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION) }
                                 context.startActivity(Intent.createChooser(send, "แชร์ PDF / พิมพ์เอกสาร"))
@@ -201,7 +211,7 @@ private fun DocumentForm(
     )
 }
 
-private fun writeDocumentPdf(context: Context, doc: BusinessDocument, header: StoreBusinessHeader?, logo: Bitmap?): File {
+private fun writeDocumentPdf(context: Context, doc: BusinessDocument, header: StoreBusinessHeader?, logo: Bitmap?, items: List<BusinessDocumentItem>): File {
     val pdf = PdfDocument()
     val page = pdf.startPage(PdfDocument.PageInfo.Builder(595, 842, 1).create())
     val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 14f }
@@ -218,6 +228,8 @@ private fun writeDocumentPdf(context: Context, doc: BusinessDocument, header: St
         documentTitle(doc.documentType), "เลขที่: " + doc.documentNo,
         "วันที่: " + doc.issueDate, "ลูกค้า/คู่ค้า: " + (doc.partyName ?: "-"),
         "เลขผู้เสียภาษีลูกค้า: " + (doc.partyTaxId ?: "-"),
+        "รายการสินค้า/บริการ:",
+        *items.mapIndexed { index, item -> (index + 1).toString() + ". " + item.description + " x " + item.quantity + " " + item.unit + " @ " + documentCurrency.format(item.unitPrice) + " = " + documentCurrency.format(item.lineTotal) }.toTypedArray(),
         "ยอดก่อนภาษี: " + documentCurrency.format(doc.subtotal),
         "ภาษี: " + documentCurrency.format(doc.taxAmount),
         "ยอดสุทธิ: " + documentCurrency.format(doc.total), "หมายเหตุ: " + (doc.notes ?: "-")
