@@ -13,7 +13,7 @@ const esc=(s:string)=>s.replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"
 export default function DocumentsManager({supabase,organizationId,role,notify}:{supabase:any;organizationId:string;role:string;notify:(s:string)=>void}){
  const [tab,setTab]=useState<"documents"|"settings"|"hardware">("documents");
  const [docs,setDocs]=useState<Doc[]>([]),[selected,setSelected]=useState<any>(null),[busy,setBusy]=useState(false);
- const [type,setType]=useState<string>("tax_invoice"),[party,setParty]=useState(""),[taxId,setTaxId]=useState(""),[address,setAddress]=useState(""),[issueDate,setIssueDate]=useState(today()),[dueDate,setDueDate]=useState(""),[discount,setDiscount]=useState("0"),[vat,setVat]=useState("7"),[notes,setNotes]=useState("");
+ const [type,setType]=useState<string>("tax_invoice"),[party,setParty]=useState(""),[taxId,setTaxId]=useState(""),[address,setAddress]=useState(""),[issueDate,setIssueDate]=useState(today()),[dueDate,setDueDate]=useState(""),[discount,setDiscount]=useState("0"),[vat,setVat]=useState("7"),[notes,setNotes]=useState("");\n const [incomeType,setIncomeType]=useState("ค่าบริการ"),[withholdingRate,setWithholdingRate]=useState("3"),[withholdingTax,setWithholdingTax]=useState("0");
  const [items,setItems]=useState<Item[]>([{description:"",quantity:"1",unit:"ชิ้น",unit_price:"0",discount:"0"}]);
  const [settings,setSettings]=useState<any>({legal_name:"",display_name:"",address:"",tax_id:"",phone:"",email:"",logo_path:"",vat_registered:false,vat_rate:7});
  const [hardware,setHardware]=useState<any>({receipt_width:80,auto_print:false,barcode_camera_enabled:true,cash_drawer_enabled:false,customer_display_enabled:false,printer_connection:"system",printer_name:"",receipt_header:"",receipt_footer:""});
