@@ -1,33 +1,42 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { FileText, Printer, Settings2, Plus, Trash2, Save, RefreshCw, Usb } from "lucide-react";
+import { FileText, Printer, Settings2, Plus, Trash2, Save, RefreshCw, Usb, Search, X, Copy, Ban, CheckCircle2, ArrowRightLeft, PackageCheck, ShoppingCart } from "lucide-react";
 
-type Item={description:string;quantity:string;unit:string;unit_price:string;discount:string};
-type Doc={id:string;document_no:string;document_type:string;status:string;issue_date:string;party_name:string;total:number;tax_amount:number;created_at:string;metadata:any};
+type Item={product_id?:string|null;description:string;quantity:string;unit:string;unit_price:string;discount:string};
+type Doc={id:string;document_no:string;document_type:string;status:string;issue_date:string;due_date?:string|null;party_name:string;party_tax_id?:string|null;party_address?:string|null;subtotal:number;discount:number;tax_rate:number;total:number;tax_amount:number;created_at:string;metadata:any;tax_mode?:string;stock_posted_at?:string|null;business_document_items?:any[]};
 const TYPES=[
- ["quotation","ใบเสนอราคา"],["invoice","ใบแจ้งหนี้"],["tax_invoice","ใบกำกับภาษี/ใบเสร็จเต็มรูป"],["receipt","ใบเสร็จรับเงิน"],["receipt_voucher","ใบสำคัญรับเงิน"],["payment_voucher","ใบสำคัญจ่าย"],["delivery_note","ใบส่งของ"],["goods_receipt","ใบรับสินค้า"],["credit_note","ใบลดหนี้/คืนสินค้า"],["withholding_certificate","หนังสือรับรองหักภาษี ณ ที่จ่าย (50 ทวิ)"]
+ ["tax_invoice","ใบกำกับภาษี / ใบเสร็จรับเงินเต็มรูป"],["abbreviated_tax_invoice","ใบกำกับภาษีอย่างย่อ / ใบเสร็จ POS"],["withholding_certificate","หนังสือรับรองหักภาษี ณ ที่จ่าย (50 ทวิ)"],["credit_note","ใบลดหนี้ (CN)"],["debit_note","ใบเพิ่มหนี้ (DN)"],
+ ["delivery_note","ใบส่งของ / ใบแจ้งหนี้"],["goods_receipt","ใบรับสินค้า (GRN)"],["purchase_order","ใบสั่งซื้อ (PO)"],["purchase_requisition","ใบขอซื้อ (PR)"],
+ ["quotation","ใบเสนอราคา (QT)"],["billing_note","ใบวางบิล (BN)"],["receipt_voucher","ใบสำคัญรับเงิน (RV)"],["deposit_receipt","ใบรับมัดจำ"],["payment_voucher","ใบสำคัญจ่าย (PV)"],["petty_cash_voucher","ใบเบิกเงินสดย่อย"],["expense_certificate","ใบรับรองแทนใบเสร็จ"],["invoice","ใบแจ้งหนี้"],["receipt","ใบเสร็จรับเงิน"]
 ] as const;
 const today=()=>new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Bangkok"}).format(new Date());
 const thb=(n:number)=>new Intl.NumberFormat("th-TH",{style:"currency",currency:"THB"}).format(n||0);
-const esc=(s:string)=>s.replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]!));
+const esc=(s:any)=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]!));
+const bahtText=(amount:number)=>{const n=Math.round((Number(amount)||0)*100)/100,whole=Math.floor(n),satang=Math.round((n-whole)*100),d=["ศูนย์","หนึ่ง","สอง","สาม","สี่","ห้า","หก","เจ็ด","แปด","เก้า"],u=["","สิบ","ร้อย","พัน","หมื่น","แสน","ล้าน"];const read=(v:number):string=>{if(!v)return "";let o="",z=String(v);for(let i=0;i<z.length;i++){const x=Number(z[i]),p=z.length-i-1;if(!x)continue;if(p===0&&x===1&&z.length>1)o+="เอ็ด";else if(p===1&&x===1)o+="สิบ";else if(p===1&&x===2)o+="ยี่สิบ";else o+=d[x]+u[p%6];}return o;};const big=(v:number):string=>v>=1e6?big(Math.floor(v/1e6))+"ล้าน"+read(v%1e6):read(v);return (whole?big(whole):"ศูนย์")+"บาท"+(satang?read(satang)+"สตางค์":"ถ้วน");};
 export default function DocumentsManager({supabase,organizationId,role,notify}:{supabase:any;organizationId:string;role:string;notify:(s:string)=>void}){
  const [tab,setTab]=useState<"documents"|"settings"|"hardware">("documents");
  const [docs,setDocs]=useState<Doc[]>([]),[selected,setSelected]=useState<any>(null),[busy,setBusy]=useState(false);
+ const [search,setSearch]=useState(""),[filterType,setFilterType]=useState("all"),[filterStatus,setFilterStatus]=useState("all"),[dateFrom,setDateFrom]=useState(""),[dateTo,setDateTo]=useState("");
+ const [sales,setSales]=useState<any[]>([]),[selectedSale,setSelectedSale]=useState(""),[uploadFile,setUploadFile]=useState<File|null>(null),[taxMode,setTaxMode]=useState("exclude"),[branchCode,setBranchCode]=useState("00000"),[paymentTerms,setPaymentTerms]=useState("0"),[validUntil,setValidUntil]=useState(""),[transportRef,setTransportRef]=useState(""),[sender,setSender]=useState(""),[receiver,setReceiver]=useState(""),[checker,setChecker]=useState(""),[incomeSection,setIncomeSection]=useState("มาตรา 40(2)"),[withholdingCondition,setWithholdingCondition]=useState("withheld");
  const [type,setType]=useState<string>("tax_invoice"),[party,setParty]=useState(""),[taxId,setTaxId]=useState(""),[address,setAddress]=useState(""),[issueDate,setIssueDate]=useState(today()),[dueDate,setDueDate]=useState(""),[discount,setDiscount]=useState("0"),[vat,setVat]=useState("7"),[notes,setNotes]=useState("");
  const [incomeType,setIncomeType]=useState("ค่าบริการ"),[withholdingRate,setWithholdingRate]=useState("3"),[withholdingTax,setWithholdingTax]=useState("0");
  const [items,setItems]=useState<Item[]>([{description:"",quantity:"1",unit:"ชิ้น",unit_price:"0",discount:"0"}]);
- const [settings,setSettings]=useState<any>({legal_name:"",display_name:"",address:"",tax_id:"",phone:"",email:"",logo_path:"",vat_registered:false,vat_rate:7});
+ const [settings,setSettings]=useState<any>({legal_name:"",display_name:"",address:"",tax_id:"",phone:"",email:"",logo_path:"",vat_registered:false,vat_rate:7,branch_code:"00000",branch_name:"สำนักงานใหญ่",signature_path:"",stamp_path:"",promptpay_id:"",bank_name:"",bank_account_name:"",bank_account_number:"",default_tax_mode:"exclude"});
  const [hardware,setHardware]=useState<any>({receipt_width:80,auto_print:false,barcode_camera_enabled:true,cash_drawer_enabled:false,customer_display_enabled:false,printer_connection:"system",printer_name:"",receipt_header:"",receipt_footer:""});
  const [printerPort,setPrinterPort]=useState<any>(null);
  const canWrite=["owner","admin","manager","accountant","hr"].includes(role);
  const subtotal=useMemo(()=>items.reduce((s,i)=>s+Math.max(0,Number(i.quantity)||0)*Math.max(0,Number(i.unit_price)||0)-Math.max(0,Number(i.discount)||0),0),[items]);
- const taxAmount=useMemo(()=>Math.round(Math.max(0,subtotal-(Number(discount)||0))*(Number(vat)||0))/100*100/100,[subtotal,discount,vat]);
- const total=Math.max(0,subtotal-(Number(discount)||0)+taxAmount);
- const load=async()=>{const [d,s,h]=await Promise.all([
-  supabase.from("business_documents").select("id,document_no,document_type,status,issue_date,party_name,total,tax_amount,created_at,metadata").eq("organization_id",organizationId).order("created_at",{ascending:false}).limit(100),
+ const taxable=Math.max(0,subtotal-(Number(discount)||0));
+ const taxAmount=taxMode==="include"?Math.round(taxable*(Number(vat)||0)/(100+(Number(vat)||0))*100)/100:taxMode==="non_vat"?0:Math.round(taxable*(Number(vat)||0))/100;
+ const total=taxMode==="include"?taxable:taxable+taxAmount;
+ const withholdingCalc=Math.round(subtotal*(Number(withholdingRate)||0))/100;
+ const filteredDocs=docs.filter(d=>(!search||[d.document_no,d.party_name,d.party_tax_id||""].some(v=>String(v).toLowerCase().includes(search.toLowerCase())))&&(filterType==="all"||d.document_type===filterType)&&(filterStatus==="all"||d.status===filterStatus)&&(!dateFrom||d.issue_date>=dateFrom)&&(!dateTo||d.issue_date<=dateTo));
+ const load=async()=>{const [d,s,h,sa]=await Promise.all([
+  supabase.from("business_documents").select("id,document_no,document_type,status,issue_date,due_date,party_name,party_tax_id,party_address,subtotal,discount,tax_rate,tax_amount,total,created_at,metadata,tax_mode,stock_posted_at").eq("organization_id",organizationId).order("created_at",{ascending:false}).limit(500),
   supabase.from("organization_business_settings").select("*").eq("organization_id",organizationId).maybeSingle(),
-  supabase.from("organization_hardware_settings").select("*").eq("organization_id",organizationId).maybeSingle()
- ]);const e=d.error||s.error||h.error;if(e)throw e;setDocs(d.data||[]);if(s.data){setSettings((v:any)=>({...v,...s.data}));setVat(String(s.data.vat_rate??7));}if(h.data)setHardware((v:any)=>({...v,...h.data}));};
+  supabase.from("organization_hardware_settings").select("*").eq("organization_id",organizationId).maybeSingle(),
+  supabase.from("sales").select("id,receipt_no,customer_id,total,created_at").eq("organization_id",organizationId).order("created_at",{ascending:false}).limit(100)
+ ]);const e=d.error||s.error||h.error||sa.error;if(e)throw e;setDocs(d.data||[]);setSales(sa.data||[]);if(s.data){setSettings((v:any)=>({...v,...s.data}));setVat(String(s.data.vat_rate??7));setTaxMode(s.data.default_tax_mode||"exclude");setBranchCode(s.data.branch_code||"00000");}if(h.data)setHardware((v:any)=>({...v,...h.data}));};
  useEffect(()=>{void load().catch(e=>notify(e.message||"โหลดเอกสารไม่สำเร็จ"));},[organizationId]);
  const saveSettings=async()=>{setBusy(true);try{if(settings.tax_id&&!/^\d{13}$/.test(settings.tax_id))throw new Error("เลขประจำตัวผู้เสียภาษีต้องมี 13 หลัก");const {error}=await supabase.from("organization_business_settings").upsert({...settings,organization_id:organizationId,updated_at:new Date().toISOString()},{onConflict:"organization_id"});if(error)throw error;notify("บันทึกข้อมูลกิจการแล้ว");}catch(e:any){notify(e.message||"บันทึกไม่สำเร็จ");}finally{setBusy(false);}};
  const saveHardware=async()=>{setBusy(true);try{const {error}=await supabase.from("organization_hardware_settings").upsert({...hardware,organization_id:organizationId,updated_at:new Date().toISOString()},{onConflict:"organization_id"});if(error)throw error;notify("บันทึกการตั้งค่าอุปกรณ์แล้ว");}catch(e:any){notify(e.message||"บันทึกไม่สำเร็จ");}finally{setBusy(false);}};
