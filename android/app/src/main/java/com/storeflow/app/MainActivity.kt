@@ -1,9 +1,14 @@
 package com.storeflow.app
 
 import android.content.Intent
+import android.graphics.BitmapFactory
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -17,6 +22,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -37,6 +43,13 @@ import java.time.ZoneId
 import java.time.Instant
 import java.time.OffsetDateTime
 import java.time.format.DateTimeFormatter
+import com.google.zxing.BinaryBitmap
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.DecodeHintType
+import com.google.zxing.MultiFormatReader
+import com.google.zxing.RGBLuminanceSource
+import com.google.zxing.common.HybridBinarizer
+import java.util.EnumMap
 
 
 private val ThaiDateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
@@ -317,7 +330,7 @@ private fun Workspace() {
     ) { padding ->
         when (tab) {
             0 -> Dashboard(Modifier.padding(padding), active.name, metrics, error)
-            1 -> PosScreen(Modifier.padding(padding), active.id, products, repo) { scope.launch { refresh() } }
+            1 -> PosScreen(Modifier.padding(padding), active.id, products, repo, role) { scope.launch { refresh() } }
             2 -> ProductsScreen(Modifier.padding(padding), active.id, products, repo,
                 role in listOf("owner", "admin", "manager")) { scope.launch { refresh() } }
             3 -> ReportsScreen(Modifier.padding(padding), metrics, products)
@@ -472,21 +485,28 @@ private fun StockDialog(product: StoreProduct, onDismiss: () -> Unit, onSave: su
 @Composable
 private fun PosScreen(
     modifier: Modifier, orgId: String, products: List<StoreProduct>,
-    repo: StoreFlowRepository, onCompleted: () -> Unit
+    repo: StoreFlowRepository, role: String, onCompleted: () -> Unit
 ) {
     val cart = remember { mutableStateMapOf<String, Double>() }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     var search by rememberSaveable { mutableStateOf("") }
-    var paying by remember { mutableStateOf(false) }
+    var paymentDialog by remember { mutableStateOf(false) }
+    var cashDialog by remember { mutableStateOf(false) }
+    var promptPayDialog by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var receipt by remember { mutableStateOf<String?>(null) }
+    var paymentSettings by remember(orgId) { mutableStateOf<StorePaymentSettings?>(null) }
     val selected = products.filter { (cart[it.id] ?: 0.0) > 0 }
     val total = selected.sumOf { it.price * (cart[it.id] ?: 0.0) }
     val filtered = products.filter { p ->
         search.isBlank() || p.name.contains(search, true) ||
             p.sku.contains(search, true) || p.barcode.orEmpty().contains(search, true)
+    }
+    LaunchedEffect(orgId) {
+        runCatching { paymentSettings = repo.storePaymentSettings(orgId) }
+            .onFailure { message = it.message ?: "โหลดช่องทางชำระเงินไม่สำเร็จ" }
     }
     Column(modifier.fillMaxSize().padding(horizontal = 14.dp)) {
         Spacer(Modifier.height(8.dp))
@@ -529,7 +549,7 @@ private fun PosScreen(
                         Modifier.weight(1f))
                     Text(money(total), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 }
-                Button(onClick = { paying = true }, enabled = selected.isNotEmpty() && !busy,
+                Button(onClick = { paymentDialog = true }, enabled = selected.isNotEmpty() && !busy,
                     modifier = Modifier.fillMaxWidth()) {
                     Text(if (busy) "กำลังบันทึก..." else "เลือกวิธีชำระเงิน")
                 }
@@ -538,13 +558,40 @@ private fun PosScreen(
             }
         }
     }
-    if (paying) CashDialog(total, onDismiss = { paying = false }, onPay = { cash ->
-        paying = false; busy = true
+    if (paymentDialog) {
+        AlertDialog(
+            onDismissRequest = { paymentDialog = false },
+            title = { Text("เลือกวิธีชำระเงิน") },
+            text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (paymentSettings?.cashEnabled != false) Button(
+                    onClick = { paymentDialog = false; cashDialog = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("เงินสด") }
+                if (paymentSettings?.promptpayEnabled == true) OutlinedButton(
+                    onClick = {
+                        if (paymentSettings?.promptpayId.isNullOrBlank()) {
+                            message = "เจ้าของร้านยังไม่ได้ตั้งค่าเบอร์พร้อมเพย์"
+                        } else {
+                            paymentDialog = false; promptPayDialog = true
+                        }
+                    }, modifier = Modifier.fillMaxWidth()
+                ) { Text("QR PromptPay / โอนเงิน") }
+                if (paymentSettings?.cashEnabled == false && paymentSettings?.promptpayEnabled != true) {
+                    Text("ร้านยังไม่ได้เปิดช่องทางรับชำระเงิน")
+                }
+            } },
+            confirmButton = { TextButton(onClick = { paymentDialog = false }) { Text("ปิด") } }
+        )
+    }
+    if (cashDialog) CashDialog(total, onDismiss = { cashDialog = false }, onPay = { cash ->
+        cashDialog = false; busy = true
         scope.launch {
             try {
                 val lines = selected.map { it to (cart[it.id] ?: 0.0) }
                 val receiptLines = lines.joinToString("\n") { (p, q) -> "${p.name} x ${qty(q)} = ${money(p.price*q)}" }
-                val id = withContext(Dispatchers.IO) { repo.checkoutCash(orgId, lines, cash) }
+                val id = withContext(Dispatchers.IO) {
+                    repo.createPosSaleWithPayment(orgId, lines, "cash", cash)
+                }
                 cart.clear()
                 receipt = "StoreFlow\nใบเสร็จรับเงิน\nเลขที่: $id\n\n$receiptLines\n\nยอดสุทธิ: ${money(total)}\nรับเงิน: ${money(cash)}\nเงินทอน: ${money(cash-total)}"
                 message = "ชำระเงินสำเร็จ"
@@ -553,10 +600,34 @@ private fun PosScreen(
             finally { busy = false }
         }
     })
+    if (promptPayDialog) {
+        PromptPayCheckoutDialog(
+            organizationId = orgId,
+            total = total,
+            items = selected.map { it to (cart[it.id] ?: 0.0) },
+            settings = paymentSettings,
+            repo = repo,
+            isOwner = role == "owner",
+            onDismiss = { promptPayDialog = false },
+            onPending = {
+                cart.clear()
+                promptPayDialog = false
+                message = "ส่งสลิปแล้ว รอเจ้าของร้านตรวจสอบก่อนออกใบเสร็จ"
+                onCompleted()
+            },
+            onPaid = { receiptText ->
+                cart.clear()
+                promptPayDialog = false
+                receipt = receiptText
+                message = "รับชำระเงินและตรวจสอบสลิปแล้ว"
+                onCompleted()
+            }
+        )
+    }
     receipt?.let { text ->
         AlertDialog(
             onDismissRequest = { receipt = null },
-            title = { Text("ชำระเงินสำเร็จ") },
+            title = { Text("ใบเสร็จรับเงิน") },
             text = { Text(text) },
             confirmButton = {
                 TextButton(onClick = {
@@ -569,6 +640,120 @@ private fun PosScreen(
             dismissButton = { TextButton(onClick = { receipt = null }) { Text("ปิด") } }
         )
     }
+}
+
+@Composable
+private fun PromptPayCheckoutDialog(
+    organizationId: String,
+    total: Double,
+    items: List<Pair<StoreProduct, Double>>,
+    settings: StorePaymentSettings?,
+    repo: StoreFlowRepository,
+    isOwner: Boolean,
+    onDismiss: () -> Unit,
+    onPending: () -> Unit,
+    onPaid: (String) -> Unit
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var slipBytes by remember { mutableStateOf<ByteArray?>(null) }
+    var transactionRef by remember { mutableStateOf("") }
+    var pendingSaleId by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val qrBitmap = remember(settings?.promptpayId, total) {
+        runCatching { settings?.promptpayId?.let { PromptPayQr.bitmap(PromptPayQr.payload(it, total)) } }.getOrNull()
+    }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        if (uri != null) {
+            scope.launch {
+                try {
+                    val bytes = withContext(Dispatchers.IO) {
+                        context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                            ?: error("อ่านไฟล์สลิปไม่สำเร็จ")
+                    }
+                    require(bytes.size <= 6 * 1024 * 1024) { "ไฟล์สลิปต้องมีขนาดไม่เกิน 6 MB" }
+                    val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                        ?: error("ไฟล์รูปภาพไม่ถูกต้อง")
+                    val pixels = IntArray(bitmap.width * bitmap.height)
+                    bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.height)
+                    val hints = EnumMap<DecodeHintType, Any>(DecodeHintType::class.java).apply {
+                        put(DecodeHintType.TRY_HARDER, true)
+                        put(DecodeHintType.POSSIBLE_FORMATS, listOf(BarcodeFormat.QR_CODE))
+                    }
+                    val decoded = MultiFormatReader().apply { setHints(hints) }
+                        .decode(BinaryBitmap(HybridBinarizer(RGBLuminanceSource(bitmap.width, bitmap.height, pixels))))
+                    val ref = decoded.text.trim()
+                    require(ref.isNotBlank()) { "ไม่พบ QR Code บนสลิป" }
+                    slipBytes = bytes
+                    transactionRef = ref.take(256)
+                    error = null
+                } catch (e: Exception) {
+                    error = e.message ?: "อ่าน QR บนสลิปไม่สำเร็จ"
+                }
+            }
+        }
+    }
+    AlertDialog(
+        onDismissRequest = { if (pendingSaleId == null && !busy) onDismiss() },
+        title = { Text("ชำระผ่าน QR PromptPay") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("ยอดที่ต้องโอน", style = MaterialTheme.typography.labelLarge)
+                Text(money(total), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                qrBitmap?.let { Image(it.asImageBitmap(), contentDescription = "PromptPay QR",
+                    modifier = Modifier.fillMaxWidth().height(210.dp)) }
+                Text("ชื่อบัญชี: ${settings?.promptpayName ?: "-"}")
+                OutlinedButton(onClick = { picker.launch("image/*") }, enabled = !busy,
+                    modifier = Modifier.fillMaxWidth()) { Text(if (slipBytes == null) "แนบรูปสลิปและอ่าน QR" else "เลือกสลิปใหม่") }
+                if (transactionRef.isNotBlank()) {
+                    Text("อ่านรหัสอ้างอิงจาก QR แล้ว", color = MaterialTheme.colorScheme.primary)
+                    Text(transactionRef.take(90), style = MaterialTheme.typography.bodySmall, maxLines = 3)
+                }
+                if (isOwner && slipBytes != null) {
+                    Text("กดยืนยันได้เมื่อเจ้าของร้านตรวจยอดและบัญชีผู้รับจากสลิปแล้วเท่านั้น",
+                        style = MaterialTheme.typography.bodySmall)
+                }
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = slipBytes != null && transactionRef.isNotBlank() && !busy,
+                onClick = {
+                    val bytes = slipBytes ?: return@TextButton
+                    scope.launch {
+                        busy = true; error = null
+                        try {
+                            val saleId = pendingSaleId ?: withContext(Dispatchers.IO) {
+                                repo.createPosSaleWithPayment(organizationId, items, "promptpay")
+                            }.also { pendingSaleId = it }
+                            val path = withContext(Dispatchers.IO) {
+                                repo.uploadPosSlip(organizationId, saleId, bytes)
+                            }
+                            withContext(Dispatchers.IO) {
+                                repo.attachPosSlip(organizationId, saleId, path, transactionRef)
+                            }
+                            if (isOwner) {
+                                withContext(Dispatchers.IO) {
+                                    repo.reviewPosSlip(organizationId, saleId, true, transactionRef,
+                                        "เจ้าของร้านตรวจสอบยอดและผู้รับจากสลิปแล้ว")
+                                }
+                                val lines = items.joinToString("\n") { (p, q) -> "${p.name} x ${qty(q)} = ${money(p.price*q)}" }
+                                onPaid("StoreFlow\nใบเสร็จรับเงิน\nเลขที่: $saleId\n\n$lines\n\nยอดสุทธิ: ${money(total)}\nชำระผ่าน: QR PromptPay\nสถานะ: เจ้าของร้านตรวจสอบแล้ว")
+                            } else {
+                                onPending()
+                            }
+                        } catch (e: Exception) {
+                            error = e.message ?: "ส่งสลิปไม่สำเร็จ"
+                        } finally { busy = false }
+                    }
+                }
+            ) { Text(if (busy) "กำลังตรวจสอบและส่งสลิป..." else if (isOwner) "ยืนยันสลิปและออกใบเสร็จ" else "ส่งสลิปให้เจ้าของร้าน") }
+        },
+        dismissButton = {
+            TextButton(enabled = !busy && pendingSaleId == null, onClick = onDismiss) { Text("ยกเลิก") }
+        }
+    )
 }
 
 
