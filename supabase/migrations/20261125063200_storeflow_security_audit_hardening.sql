@@ -318,4 +318,22 @@ create trigger prevent_org_change before update of organization_id
 on public.store_payment_settings for each row
 execute function private.prevent_organization_id_change();
 
+-- Remove unused direct write grants; writes are performed only by
+-- trusted SECURITY DEFINER functions or the service role.
+revoke insert,update,delete,truncate,references,trigger on table
+ public.business_document_sequences,
+ public.organization_members,
+ public.organization_subscriptions,
+ public.organizations,
+ public.platform_admins,
+ public.subscription_billing_events,
+ public.subscription_plans
+from authenticated;
+
+revoke insert,update,delete on table
+ public.documents,
+ public.document_items,
+ public.document_settings
+from authenticated;
+
 commit;
