@@ -283,31 +283,17 @@ class StoreFlowRepository(private val client: SupabaseClient) {
         }.decodeList<StorePaymentSettings>().firstOrNull()
 
     suspend fun saveStorePaymentSettings(settings: StorePaymentSettings) {
-        val userId = client.auth.currentUserOrNull()?.id ?: error("กรุณาเข้าสู่ระบบใหม่")
+        require(client.auth.currentUserOrNull()?.id != null) { "กรุณาเข้าสู่ระบบใหม่" }
         val value = settings.copy(
             promptpayId = settings.promptpayId?.filter { it.isDigit() }?.ifBlank { null },
-            promptpayName = settings.promptpayName?.trim()?.ifBlank { null }
+            promptpayName = settings.promptpayName?.trim()?.ifBlank { null },
+            bankName = settings.bankName?.trim()?.ifBlank { null },
+            bankAccountName = settings.bankAccountName?.trim()?.ifBlank { null },
+            bankAccountNumber = settings.bankAccountNumber?.filter { it.isDigit() }?.ifBlank { null }
         )
-        val payload = buildJsonArray {
-            add(buildJsonObject {
-                put("organization_id", value.organizationId)
-                put("cash_enabled", value.cashEnabled)
-                put("promptpay_enabled", value.promptpayEnabled)
-                put("bank_transfer_enabled", value.bankTransferEnabled)
-                put("promptpay_id", value.promptpayId ?: JsonNull)
-                put("promptpay_name", value.promptpayName ?: JsonNull)
-                put("bank_name", value.bankName ?: JsonNull)
-                put("bank_account_name", value.bankAccountName ?: JsonNull)
-                put("bank_account_number", value.bankAccountNumber ?: JsonNull)
-                put("qr_image_path", value.qrImagePath ?: JsonNull)
-                put("qr_image_path", value.qrImagePath ?: JsonNull)
-            })
-        }
-        client.from("store_payment_settings").insert(
-            payload,
-            upsert = true,
+        client.from("store_payment_settings").upsert(value) {
             onConflict = "organization_id"
-        )
+        }
     }
 
     suspend fun updateEmployeeSalary(
@@ -367,7 +353,7 @@ class StoreFlowRepository(private val client: SupabaseClient) {
         client.functions.invoke("storeflow-delete-account", body = body)
     }
 
-    suspend fun subscription(organizationId: String): StoreSubscription?
+    suspend fun subscription(organizationId: String): StoreSubscription? =
         client.from("organization_subscriptions").select {
             filter { eq("organization_id", organizationId) }
             limit(1)
