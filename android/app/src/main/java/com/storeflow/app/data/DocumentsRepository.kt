@@ -39,6 +39,17 @@ data class StoreBusinessHeader(
     @SerialName("logo_path") val logoPath: String? = null
 )
 
+@Serializable
+data class BusinessDocumentItem(
+    val id: String,
+    val description: String,
+    val quantity: Double,
+    val unit: String = "รายการ",
+    @SerialName("unit_price") val unitPrice: Double,
+    val discount: Double = 0.0,
+    @SerialName("line_total") val lineTotal: Double
+)
+
 data class DocumentLine(
     val description: String, val quantity: Double, val unit: String = "รายการ",
     val unitPrice: Double, val discount: Double = 0.0, val productId: String? = null
@@ -59,6 +70,15 @@ class DocumentsRepository(private val client: SupabaseClient) {
             filter { eq("organization_id", organizationId) }
             order("created_at", Order.DESCENDING)
             limit(100)
+        }.decodeList()
+
+    suspend fun items(organizationId: String, documentId: String): List<BusinessDocumentItem> =
+        client.from("business_document_items").select {
+            filter {
+                eq("organization_id", organizationId)
+                eq("document_id", documentId)
+            }
+            order("sort_order", Order.ASCENDING)
         }.decodeList()
 
     suspend fun convertQuotation(organizationId: String, sourceDocumentId: String, targetType: String = "invoice"): String {
