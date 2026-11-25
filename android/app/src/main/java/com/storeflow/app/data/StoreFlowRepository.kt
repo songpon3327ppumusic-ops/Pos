@@ -22,6 +22,14 @@ import java.time.ZoneId
 import java.util.UUID
 
 @Serializable
+data class PrivacyConsentInsert(
+    @SerialName("user_id") val userId: String,
+    @SerialName("consent_version") val consentVersion: String,
+    @SerialName("terms_version") val termsVersion: String,
+    @SerialName("privacy_policy_url") val privacyPolicyUrl: String
+)
+
+@Serializable
 data class StoreMembership(
     @SerialName("organization_id") val organizationId: String,
     val role: String
@@ -259,6 +267,16 @@ class StoreFlowRepository(private val client: SupabaseClient) {
         return client.postgrest.rpc("storeflow_clock_out", params).decodeAs<String>()
     }
 
+
+    suspend fun recordPrivacyConsent() {
+        val userId = client.auth.currentUserOrNull()?.id ?: error("กรุณาเข้าสู่ระบบเพื่อบันทึกความยินยอม")
+        client.from("privacy_consents").insert(PrivacyConsentInsert(
+            userId = userId,
+            consentVersion = "2026-11-26",
+            termsVersion = "2026-11-26",
+            privacyPolicyUrl = "https://benz-verse.com/storeflow-privacy"
+        ))
+    }
 
     suspend fun signUp(email: String, password: String) {
         require(email.contains("@") && password.length >= 8) { "กรอกอีเมลและรหัสผ่านอย่างน้อย 8 ตัวอักษร" }
