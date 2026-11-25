@@ -68,7 +68,7 @@ All database test transactions were rolled back; no test sale or test organizati
 ## Runtime log review (last 24 hours at audit time)
 
 - Auth audit logs showed 7 login events, token refresh/revoke events, and no recorded failed-login action in the sampled 24-hour window. This is not proof that credential attacks never occurred; it only describes the retained log window.
-- Six POST requests to `storeflow-pos-connect` returned HTTP 500 under the same authenticated owner account. The store's `stripe_connect_account_id` remains empty and Stripe flags remain disabled. These requests do not by themselves indicate intrusion; they indicate an unresolved Stripe Connect onboarding/API error. The underlying Stripe error is not recoverable from the retained edge access logs. Verify the platform's Stripe account country, Connect availability, requested capabilities, and secret mode before enabling Connect payments.
+- Six POST requests to `storeflow-pos-connect` returned HTTP 500 under the same authenticated owner account. The store's `stripe_connect_account_id` remains empty and Stripe flags remain disabled. These requests do not by themselves indicate intrusion; they indicate an unresolved Stripe Connect onboarding/API error. The underlying Stripe error is not recoverable from the retained edge access logs. The handler was updated to log sanitized Stripe error codes/statuses and return upstream failures as HTTP 502 for future diagnosis. Verify the platform's Stripe account country, Connect availability, requested capabilities, and secret mode before enabling Connect payments.
 
 ## Historical payment records requiring owner reconciliation
 
