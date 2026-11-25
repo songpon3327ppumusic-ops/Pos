@@ -203,7 +203,7 @@ Deno.serve(async (req) => {
     if (expectedBank.length >= 4) {
       recipientCheckAvailable = digits(receiverBank).length >= 4;
       recipientMatched = recipientCheckAvailable && suffix(receiverBank) === suffix(expectedBank);
-    } else if (expectedPromptPay.length >= 4 && digits(receiverProxy).length >= 4) {
+    } else if (expectedPromptPay.length >= 4 && digits(receiverProxy).length >= expectedPromptPay.length) {
       recipientCheckAvailable = true;
       recipientMatched = suffix(receiverProxy) === suffix(expectedPromptPay);
     } else if (expectedName && normalizeName(matchedAccount.nameTh)) {
