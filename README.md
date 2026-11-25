@@ -42,3 +42,15 @@ Migration `202611240002_live_operations.sql` adds:
 - Migration `202611240003_fix_organization_read_policy.sql`: restricts organization records to active members using the correct organization ID.
 
 All three functions validate the authenticated user and explicitly revoke execution from public/anonymous roles. Keep all service-role/secret keys server-side.
+
+## Business Document Center
+- Multi-tenant business document center built on the existing `business_documents` and `business_document_items` tables, with `document_settings`, `documents`, and `document_items` security-invoker compatibility views exposing `store_id`.
+- Monthly per-store/per-type document numbering; tax modes (VAT excluded, VAT included, non-VAT); Thai baht text; original/copy A4 print and 58/80mm receipt print.
+- Document types: full/abbreviated tax invoices, 50 Tawi withholding certificate, credit/debit notes, delivery note, goods receipt, PO/PR, quotation, billing note, receipt/deposit vouchers, payment/petty-cash vouchers, and expense certificate.
+- POS sales history includes a direct "ออกเอกสาร" action; the selected sale's line items and customer are imported and the source sale is linked to the new document.
+- Goods receipt confirmation posts stock movements and increments the linked products once, guarded by a transaction and duplicate-post protection.
+- Private `business-documents` Storage bucket stores logos, signatures, stamps, and document attachments under the organization UUID path. Storage writes are restricted by tenant membership and document/settings permissions.
+- Employee invite code generation is owner-only; `get_store_invite_code()` now creates a code when the organization does not yet have one.
+
+### Migration and statutory-document notes
+Apply the migration files under `supabase/migrations` in version order. The document compatibility views are aliases over the existing organization-scoped tables; they intentionally avoid duplicating records. The 50 Tawi layout is a print template, not a certified Revenue Department e-filing form; confirm statutory wording, rates, and required fields with the Revenue Department/accountant before issuing official certificates.
