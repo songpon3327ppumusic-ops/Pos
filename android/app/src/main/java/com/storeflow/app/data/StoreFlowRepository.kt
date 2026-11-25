@@ -1,32 +1,193 @@
 package com.storeflow.app.data
 
-import com.storeflow.app.BuildConfig
-import io.github.jan.supabase.createSupabaseClient
-import io.github.jan.supabase.auth.Auth
-import io.github.jan.supabase.auth.providers.Google
-import io.github.jan.supabase.postgrest.Postgrest
-import io.github.jan.supabase.realtime.Realtime
-import io.github.jan.supabase.storage.Storage
+import io.github.jan.supabase.SupabaseClient
+import io.github.jan.supabase.auth.auth
+import io.github.jan.supabase.postgrest.from
+import io.github.jan.supabase.postgrest.postgrest
+import io.github.jan.supabase.postgrest.query.Order
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import java.time.LocalDate
+import java.time.ZoneId
+import java.util.UUID
 
-object StoreFlowSupabase {
-    val client by lazy {
-        require(BuildConfig.SUPABASE_URL.isNotBlank()) {
-            "Missing SUPABASE_URL. Configure GitHub Actions secrets."
+@Serializable
+data class StoreMembership(
+    @SerialName("organization_id") val organizationId: String,
+    val role: String
+)
+
+@Serializable
+data class StoreOrganization(
+    val id: String,
+    val name: String,
+    val slug: String
+)
+
+@Serializable
+data class StoreProduct(
+    val id: String,
+    val sku: String,
+    val name: String,
+    val category: String? = null,
+    val price: Double,
+    val stock: Double,
+    @SerialName("min_stock") val minStock: Double = 0.0,
+    val barcode: String? = null,
+    @SerialName("is_active") val isActive: Boolean = true
+)
+
+@Serializable
+data class ProductInsert(
+    @SerialName("organization_id") val organizationId: String,
+    val sku: String,
+    val name: String,
+    val category: String? = null,
+    val price: Double,
+    val stock: Double = 0.0,
+    @SerialName("min_stock") val minStock: Double = 0.0,
+    @SerialName("is_active") val isActive: Boolean = true
+)
+
+@Serializable
+data class StoreSaleSummary(
+    val total: Double,
+    @SerialName("created_at") val createdAt: String
+)
+
+data class StoreMetrics(
+    val todaySales: Double = 0.0,
+    val todayOrders: Int = 0,
+    val lowStockCount: Int = 0
+)
+
+class StoreFlowRepository(private val client: SupabaseClient) {
+    suspend fun signIn(email: String, password: String) {
+        client.auth.signInWith(io.github.jan.supabase.auth.providers.builtin.Email) {
+            this.email = email
+            this.password = password
         }
-        require(BuildConfig.SUPABASE_ANON_KEY.isNotBlank()) {
-            "Missing SUPABASE_ANON_KEY or SUPABASE_PUBLISHABLE_KEY."
-        }
-        createSupabaseClient(
-            supabaseUrl = BuildConfig.SUPABASE_URL,
-            supabaseKey = BuildConfig.SUPABASE_ANON_KEY
-        ) {
-            install(Auth) {
-                scheme = "storeflow"
-                host = "auth"
+    }
+
+    suspend fun signInWithGoogle() {
+        client.auth.signInWith(io.github.jan.supabase.auth.providers.Google)
+    }
+
+    suspend fun signOut() {
+        client.auth.signOut()
+    }
+
+    suspend fun activeMemberships(): List<StoreMembership> {
+        val userId = client.auth.currentUserOrNull()?.id
+            ?: error("กรุณาเข้าสู่ระบบใหม่")
+        return client.from("organization_members").select {
+            filter {
+                eq("user_id", userId)
+                eq("is_active", true)
+                eq("membership_status", "active")
             }
-            install(Postgrest)
-            install(Realtime)
-            install(Storage)
+            order("created_at", Order.ASCENDING)
+        }.decodeList()
+    }
+
+    suspend fun organization(id: String): StoreOrganization {
+        return client.from("organizations").select {
+            filter { eq("id", id) }
+            limit(1)
+        }.decodeSingle()
+    }
+
+    suspend fun products(organizationId: String): List<StoreProduct> {
+        return client.from("products").select {
+            filter {
+                eq("organization_id", organizationId)
+                eq("is_active", true)
+            }
+            order("name", Order.ASCENDING)
+            limit(300)
+        }.decodeList()
+    }
+
+    suspend fun addProduct(
+        organizationId: String,
+        sku: String,
+        name: String,
+        category: String,
+        price: Double,
+        minStock: Double
+    ) {
+        require(sku.isNotBlank()) { "กรุณากรอกรหัสสินค้า" }
+        require(name.isNotBlank()) { "กรุณากรอกชื่อสินค้า" }
+        require(price >= 0) { "ราคาต้องไม่ติดลบ" }
+        require(minStock >= 0) { "จุดเตือนสต็อกต้องไม่ติดลบ" }
+        client.from("products").insert(
+            ProductInsert(
+                organizationId = organizationId,
+                sku = sku.trim(),
+                name = name.trim(),
+                category = category.trim().ifBlank { null },
+                price = price,
+                minStock = minStock
+            )
+        )
+    }
+
+    suspend fun adjustStock(organizationId: String, productId: String, delta: Double, note: String) {
+        require(delta != 0.0) { "จำนวนปรับสต็อกต้องไม่เป็นศูนย์" }
+        val params = buildJsonObject {
+            put("p_organization_id", organizationId)
+            put("p_product_id", productId)
+            put("p_quantity_delta", delta)
+            put("p_note", note.ifBlank { "ปรับสต็อกจากแอป StoreFlow" })
         }
+        client.postgrest.rpc("adjust_stock", params)
+    }
+
+    suspend fun metrics(organizationId: String, productList: List<StoreProduct>): StoreMetrics {
+        val start = LocalDate.now(ZoneId.of("Asia/Bangkok"))
+            .atStartOfDay(ZoneId.of("Asia/Bangkok")).toInstant().toString()
+        val sales = client.from("sales").select {
+            filter {
+                eq("organization_id", organizationId)
+                gte("created_at", start)
+                eq("status", "completed")
+            }
+            limit(1000)
+        }.decodeList<StoreSaleSummary>()
+        return StoreMetrics(
+            todaySales = sales.sumOf { it.total },
+            todayOrders = sales.size,
+            lowStockCount = productList.count { it.stock <= it.minStock }
+        )
+    }
+
+    suspend fun checkoutCash(
+        organizationId: String,
+        items: List<Pair<StoreProduct, Double>>,
+        cashReceived: Double
+    ): String {
+        require(items.isNotEmpty()) { "ตะกร้าสินค้าว่าง" }
+        val params = buildJsonObject {
+            put("p_organization_id", organizationId)
+            put("p_items", buildJsonArray {
+                items.forEach { (product, quantity) ->
+                    add(buildJsonObject {
+                        put("product_id", product.id)
+                        put("quantity", quantity)
+                    })
+                }
+            })
+            put("p_payment_method", "cash")
+            put("p_discount", 0)
+            put("p_tax", 0)
+            put("p_customer_id", JsonNull)
+            put("p_idempotency_key", UUID.randomUUID().toString())
+            put("p_cash_received", cashReceived)
+        }
+        return client.postgrest.rpc("checkout_sale_idempotent", params).decodeAs<String>()
     }
 }
