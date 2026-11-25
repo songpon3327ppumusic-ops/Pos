@@ -1,9 +1,16 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 const cors={"Access-Control-Allow-Origin":"https://songpon3327ppumusic-ops.github.io","Access-Control-Allow-Headers":"authorization, x-client-info, apikey, content-type","Access-Control-Allow-Methods":"POST, OPTIONS"};
 const json=(data:unknown,status=200)=>new Response(JSON.stringify(data),{status,headers:{...cors,"Content-Type":"application/json"}});
+class StripeConnectApiError extends Error { constructor(message:string,public status:number,public code?:string){super(message);this.name="StripeConnectApiError";} }
 async function stripeRequest(path:string,key:string,body?:URLSearchParams,method="POST"){
  const response=await fetch("https://api.stripe.com/v1/"+path,{method,headers:{Authorization:"Bearer "+key,...(body?{"Content-Type":"application/x-www-form-urlencoded"}:{})},body:body?.toString()});
- const data=await response.json();if(!response.ok)throw new Error(data.error?.message||"Stripe API error");return data;
+ const data=await response.json();
+ if(!response.ok){
+  const message=String(data.error?.message||"Stripe API error").slice(0,400);
+  console.error("stripe-connect-api-rejected",{path,status:response.status,code:data.error?.code||null,type:data.error?.type||null,message});
+  throw new StripeConnectApiError(message,response.status,String(data.error?.code||""));
+ }
+ return data;
 }
 Deno.serve(async(req)=>{
  if(req.method==="OPTIONS")return new Response("ok",{headers:cors});
@@ -48,5 +55,8 @@ Deno.serve(async(req)=>{
   const {error}=await admin.from("store_payment_settings").update({stripe_charges_enabled:charges,stripe_payouts_enabled:payouts,stripe_webhook_verified:webhookVerified,updated_at:new Date().toISOString()}).eq("organization_id",organization_id);
   if(error)throw error;
   return json({connected:true,account_id:account.id,charges_enabled:charges,payouts_enabled:payouts,webhook_verified:webhookVerified,details_submitted:Boolean(account.details_submitted)});
- }catch(error){return json({error:error instanceof Error?error.message:"Stripe Connect error"},500);}
+ }catch(error){
+  if(!(error instanceof StripeConnectApiError))console.error("stripe-connect-handler-failed",{name:error instanceof Error?error.name:"UnknownError",message:error instanceof Error?error.message.slice(0,400):"Unknown error"});
+  return json({error:error instanceof Error?error.message:"Stripe Connect error"},error instanceof StripeConnectApiError?502:500);
+ }
 });
