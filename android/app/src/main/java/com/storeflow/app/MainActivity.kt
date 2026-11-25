@@ -128,6 +128,7 @@ private fun LoginScreen() {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun Workspace() {
     val client = remember { StoreFlowSupabase.client }
