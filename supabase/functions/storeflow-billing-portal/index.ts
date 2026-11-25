@@ -19,6 +19,9 @@ Deno.serve(async (req) => {
     const admin = createClient(url, service);
     const { data: member } = await admin.from("organization_members").select("role,is_active,membership_status").eq("organization_id", organization_id).eq("user_id", user.id).maybeSingle();
     if (!member?.is_active || member.membership_status !== "active" || !["owner", "admin"].includes(member.role)) return json({ error: "Not authorized" }, 403);
+    const { data: allowed, error: limitError } = await admin.rpc("consume_storeflow_rate_limit", { p_key: "billing-portal:" + organization_id + ":" + user.id, p_window_seconds: 600, p_limit: 10 });
+    if (limitError) throw limitError;
+    if (allowed !== true) return json({ error: "เปิดหน้าจัดการ Billing บ่อยเกินไป กรุณารอ 10 นาที" }, 429);
     const { data: sub } = await admin.from("organization_subscriptions").select("stripe_customer_id").eq("organization_id", organization_id).single();
     if (!sub?.stripe_customer_id) return json({ error: "No billing customer found" }, 404);
     const form = new URLSearchParams({ customer: sub.stripe_customer_id, return_url: "https://songpon3327ppumusic-ops.github.io/Pos/" });
