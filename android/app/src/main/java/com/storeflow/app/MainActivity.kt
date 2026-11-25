@@ -324,7 +324,7 @@ private fun Workspace() {
             4 -> WorkforceScreen(Modifier.padding(padding), active.id, repo,
                 role in listOf("owner", "admin", "hr"))
             else -> SettingsScreen(Modifier.padding(padding), active, role,
-                client.auth.currentUserOrNull()?.email.orEmpty(),
+                client.auth.currentUserOrNull()?.email.orEmpty(), repo,
                 onSwitch = { store = null },
                 onSignOut = { scope.launch { repo.signOut() } })
         }
@@ -908,23 +908,141 @@ private fun ReportsScreen(modifier: Modifier, metrics: StoreMetrics, products: L
 @Composable
 private fun SettingsScreen(
     modifier: Modifier, store: StoreOrganization, role: String, email: String,
-    onSwitch: () -> Unit, onSignOut: () -> Unit
+    repo: StoreFlowRepository, onSwitch: () -> Unit, onSignOut: () -> Unit
 ) {
-    Column(modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("ตั้งค่า", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-        Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
-            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                Text("ร้านค้าที่ใช้งาน", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(store.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                Text("สิทธิ์: " + role)
-                Text(email, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    val scope = rememberCoroutineScope()
+    val canManage = role == "owner"
+    var settings by remember(store.id) { mutableStateOf(StorePaymentSettings(store.id)) }
+    var subscription by remember { mutableStateOf<StoreSubscription?>(null) }
+    var promptPayId by remember { mutableStateOf("") }
+    var promptPayName by remember { mutableStateOf("") }
+    var bankName by remember { mutableStateOf("") }
+    var bankAccountName by remember { mutableStateOf("") }
+    var bankAccountNumber by remember { mutableStateOf("") }
+    var inviteCode by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf<String?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(store.id) {
+        runCatching {
+            settings = repo.storePaymentSettings(store.id) ?: StorePaymentSettings(store.id)
+            promptPayId = settings.promptpayId.orEmpty()
+            promptPayName = settings.promptpayName.orEmpty()
+            bankName = settings.bankName.orEmpty()
+            bankAccountName = settings.bankAccountName.orEmpty()
+            bankAccountNumber = settings.bankAccountNumber.orEmpty()
+            subscription = repo.subscription(store.id)
+        }.onFailure { error = it.message ?: "โหลดการตั้งค่าไม่สำเร็จ" }
+    }
+
+    LazyColumn(modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item { Text("ตั้งค่า", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold) }
+        item {
+            Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    Text("ร้านค้าที่ใช้งาน", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(store.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text("สิทธิ์: $role")
+                    Text(email, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
         }
-        OutlinedButton(onClick = onSwitch, modifier = Modifier.fillMaxWidth()) { Text("เปลี่ยนร้านค้า") }
-        Button(onClick = onSignOut, modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB42318))) { Text("ออกจากระบบ") }
+        item {
+            Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("ตั้งค่าการรับชำระเงิน", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    if (!canManage) Text("เฉพาะเจ้าของร้านเท่านั้นที่แก้ไขได้")
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("เงินสด", Modifier.weight(1f)); Switch(settings.cashEnabled,
+                            { settings = settings.copy(cashEnabled = it) }, enabled = canManage)
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("PromptPay / QR", Modifier.weight(1f)); Switch(settings.promptpayEnabled,
+                            { settings = settings.copy(promptpayEnabled = it) }, enabled = canManage)
+                    }
+                    OutlinedTextField(promptPayId, { promptPayId = it.filter(Char::isDigit) },
+                        label = { Text("เบอร์พร้อมเพย์ 10 หลัก หรือเลขบัตร 13 หลัก") },
+                        enabled = canManage, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(promptPayName, { promptPayName = it },
+                        label = { Text("ชื่อบัญชีพร้อมเพย์") }, enabled = canManage,
+                        singleLine = true, modifier = Modifier.fillMaxWidth())
+                    HorizontalDivider()
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("โอนเข้าบัญชีธนาคาร", Modifier.weight(1f)); Switch(settings.bankTransferEnabled,
+                            { settings = settings.copy(bankTransferEnabled = it) }, enabled = canManage)
+                    }
+                    OutlinedTextField(bankName, { bankName = it }, label = { Text("ธนาคาร") },
+                        enabled = canManage, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(bankAccountName, { bankAccountName = it }, label = { Text("ชื่อบัญชี") },
+                        enabled = canManage, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(bankAccountNumber, { bankAccountNumber = it }, label = { Text("เลขบัญชี") },
+                        enabled = canManage, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    if (canManage) Button(
+                        enabled = !busy,
+                        onClick = {
+                            scope.launch {
+                                busy = true; error = null; message = null
+                                try {
+                                    require(!settings.promptpayEnabled || promptPayId.length == 10 || promptPayId.length == 13) {
+                                        "กรุณากรอกเบอร์พร้อมเพย์ 10 หลัก หรือเลขบัตร 13 หลัก"
+                                    }
+                                    repo.saveStorePaymentSettings(settings.copy(
+                                        promptpayId = promptPayId.ifBlank { null },
+                                        promptpayName = promptPayName.ifBlank { null },
+                                        bankName = bankName.ifBlank { null },
+                                        bankAccountName = bankAccountName.ifBlank { null },
+                                        bankAccountNumber = bankAccountNumber.ifBlank { null }
+                                    ))
+                                    message = "บันทึกการตั้งค่ารับชำระเงินแล้ว"
+                                } catch (e: Exception) { error = e.message ?: "บันทึกไม่สำเร็จ" }
+                                finally { busy = false }
+                            }
+                        }, modifier = Modifier.fillMaxWidth()
+                    ) { Text(if (busy) "กำลังบันทึก..." else "บันทึกช่องทางรับเงิน") }
+                }
+            }
+        }
+        item {
+            Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    Text("แพ็กเกจสมาชิก", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text("สถานะ: ${subscription?.status ?: "ยังไม่พบข้อมูล"}")
+                    Text("แพ็กเกจปัจจุบัน: ${subscription?.planId ?: "-"}")
+                    subscription?.trialEndsAt?.let { Text("สิ้นสุดทดลองใช้ฟรี: ${formatThaiDateTime(it)}") }
+                    Text("ทดลองใช้ฟรี 7 วัน")
+                    Text("รายเดือน: เลือกตามแพ็กเกจ")
+                    Text("ซื้อขาด: ฿2,590 (ราคาปกติ ฿3,990)")
+                    Text("การเปิดชำระแพ็กเกจต้องเชื่อมระบบชำระเงินและยืนยันคำสั่งซื้อก่อน จึงยังไม่เปลี่ยนสถานะสมาชิกจากหน้าจอนี้")
+                }
+            }
+        }
+        if (canManage) item {
+            Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("รหัสเชิญพนักงาน", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    inviteCode?.let { Text(it, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold) }
+                    OutlinedButton(onClick = {
+                        scope.launch {
+                            busy = true
+                            try { inviteCode = repo.ownerInviteCode(); message = "สร้างรหัสเชิญแล้ว" }
+                            catch (e: Exception) { error = e.message ?: "สร้างรหัสเชิญไม่สำเร็จ" }
+                            finally { busy = false }
+                        }
+                    }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("สร้าง / แสดงรหัสเชิญ") }
+                }
+            }
+        }
+        item { OutlinedButton(onClick = onSwitch, modifier = Modifier.fillMaxWidth()) { Text("เปลี่ยนร้านค้า") } }
+        item {
+            Button(onClick = onSignOut, modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB42318))) { Text("ออกจากระบบ") }
+        }
+        message?.let { item { Text(it, color = MaterialTheme.colorScheme.primary) } }
+        error?.let { item { Text(it, color = MaterialTheme.colorScheme.error) } }
     }
 }
+
 
 @Composable
 private fun EmptyCard(title: String, description: String) {
