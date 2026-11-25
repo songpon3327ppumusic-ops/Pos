@@ -227,29 +227,13 @@ using (private.is_org_member(organization_id)
  and private.has_module_access(organization_id,'documents','read'));
 
 drop policy if exists business_documents_storage_select on storage.objects;
-create policy business_documents_storage_select
-on storage.objects
+create policy business_documents_storage_select on storage.objects
 for select to authenticated
 using (
  bucket_id='business-documents'
  and (storage.foldername(name))[1] ~* '^[0-9a-f-]{36}$'
- and (
-  (
-   (storage.foldername(name))[2]='settings'
-   and exists (
-    select 1 from public.organization_members m
-    where m.organization_id=((storage.foldername(name))[1])::uuid
-     and m.user_id=(select auth.uid())
-     and m.is_active=true and m.membership_status='active'
-     and m.role in ('owner','admin')
-   )
-  )
-  or
-  (
-   (storage.foldername(name))[2]='documents'
-   and private.has_module_access(((storage.foldername(name))[1])::uuid,'documents','read')
-  )
- )
+ and (storage.foldername(name))[2] in ('settings','documents')
+ and private.has_module_access(((storage.foldername(name))[1])::uuid,'documents','read')
 );
 
 -- Tighten active-status checks on organization settings and organization lookup.
