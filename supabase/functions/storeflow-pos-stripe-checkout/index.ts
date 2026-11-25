@@ -13,6 +13,8 @@ Deno.serve(async(req)=>{
   const admin=createClient(url,service);
   const {data:member}=await admin.from("organization_members").select("role,is_active,membership_status").eq("organization_id",organization_id).eq("user_id",user.id).maybeSingle();
   if(!member?.is_active||member.membership_status!=="active"||!["owner","admin","manager","cashier"].includes(member.role))return json({error:"Not authorized"},403);
+  const {data:allowed,error:limitError}=await admin.rpc("consume_storeflow_rate_limit",{p_key:"pos-stripe-checkout:"+organization_id+":"+sale_id+":"+user.id,p_window_seconds:600,p_limit:5});
+  if(limitError)throw limitError;if(allowed!==true)return json({error:"เริ่มชำระเงินผ่าน Stripe บ่อยเกินไป กรุณารอ 10 นาที"},429);
   const [{data:settings},{data:sale,saleError}]=await Promise.all([
    admin.from("store_payment_settings").select("stripe_connect_account_id,stripe_enabled,stripe_charges_enabled,stripe_webhook_verified").eq("organization_id",organization_id).maybeSingle(),
    admin.from("sales").select("id,receipt_no,total,payment_status,payment_method,stripe_checkout_session_id,payment_attempt").eq("organization_id",organization_id).eq("id",sale_id).single().then(({data,error})=>({data,saleError:error}))
