@@ -172,10 +172,9 @@ export default function StoreApp(){
  };
  const updatePayrollItem=async(item:any,fieldName:string,value:number)=>{
   if(!Number.isFinite(value)||value<0){notify("กรุณากรอกจำนวนเงินตั้งแต่ 0 ขึ้นไป");return;}
-  const next={...item,[fieldName]:value};
-  const net=Number(next.base_pay||0)+Number(next.allowances||0)+Number(next.overtime_pay||0)+Number(next.commission||0)+Number(next.bonus||0)-Number(next.deductions||0)-Number(next.tax||0)-Number(next.social_security||0);
+  if(!["base_pay","allowances","overtime_pay","commission","bonus","deductions","tax","social_security"].includes(fieldName)){notify("ไม่อนุญาตให้แก้ไขฟิลด์นี้");return;}
   setBusy(true);
-  try{const {error}=await supabase.from("payroll_items").update({[fieldName]:value,net_pay:Math.max(0,net)}).eq("id",item.id).eq("organization_id",orgId);if(error)throw error;await reload();notify("อัปเดตรายการเงินเดือนแล้ว");}
+  try{const {error}=await supabase.from("payroll_items").update({[fieldName]:value}).eq("id",item.id).eq("organization_id",orgId);if(error)throw error;await reload();notify("อัปเดตรายการเงินเดือนแล้ว");}
   catch(e){notify(e instanceof Error?e.message:"บันทึกรายการเงินเดือนไม่สำเร็จ");}finally{setBusy(false);}
  };
  const updatePayrollStatus=async(period:any,status:"approved"|"paid")=>{
