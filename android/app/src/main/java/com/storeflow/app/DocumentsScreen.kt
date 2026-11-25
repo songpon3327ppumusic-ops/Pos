@@ -108,8 +108,7 @@ fun DocumentsScreen(modifier: Modifier, organizationId: String, repository: Docu
             scope.launch {
                 try {
                     withContext(Dispatchers.IO) {
-                        val lines = if (type == "withholding_certificate" && description.isBlank()) emptyList()
-                            else listOf(DocumentLine(description, qty, unitPrice = price))
+                        val lines = listOf(DocumentLine(description, qty, unitPrice = price))
                         repository.create(organizationId, type, party, taxId, address, LocalDate.now().toString(), due, lines, mode, 7.0, notes, income, whRate)
                     }
                     creating = false; refresh()
@@ -123,16 +122,29 @@ fun DocumentsScreen(modifier: Modifier, organizationId: String, repository: Docu
             title = { Text(documentTitle(doc.documentType)) },
             text = { Text("เลขที่: " + doc.documentNo + "\nลูกค้า: " + (doc.partyName ?: "-") + "\nวันที่: " + doc.issueDate + "\nยอดรวม: " + documentCurrency.format(doc.total) + "\nสถานะ: " + doc.status) },
             confirmButton = {
-                TextButton(onClick = {
-                    scope.launch {
-                        try {
-                            val file = withContext(Dispatchers.IO) { writeDocumentPdf(context, doc, businessHeader, logoBitmap) }
-                            val uri = FileProvider.getUriForFile(context, context.packageName + ".files", file)
-                            val send = Intent(Intent.ACTION_SEND).apply { type = "application/pdf"; putExtra(Intent.EXTRA_STREAM, uri); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION) }
-                            context.startActivity(Intent.createChooser(send, "แชร์ PDF / พิมพ์เอกสาร"))
-                        } catch (e: Exception) { error = e.message ?: "สร้าง PDF ไม่สำเร็จ" }
+                Row {
+                    if (doc.documentType == "quotation") {
+                        TextButton(onClick = {
+                            scope.launch {
+                                try {
+                                    withContext(Dispatchers.IO) { repository.convertQuotation(organizationId, doc.id) }
+                                    selected = null
+                                    refresh()
+                                } catch (e: Exception) { error = e.message ?: "แปลงใบเสนอราคาไม่สำเร็จ" }
+                            }
+                        }) { Text("แปลงเป็นใบแจ้งหนี้") }
                     }
-                }) { Icon(Icons.Default.PictureAsPdf, null); Text("PDF / แชร์ / พิมพ์") }
+                    TextButton(onClick = {
+                        scope.launch {
+                            try {
+                                val file = withContext(Dispatchers.IO) { writeDocumentPdf(context, doc, businessHeader, logoBitmap) }
+                                val uri = FileProvider.getUriForFile(context, context.packageName + ".files", file)
+                                val send = Intent(Intent.ACTION_SEND).apply { type = "application/pdf"; putExtra(Intent.EXTRA_STREAM, uri); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+                                context.startActivity(Intent.createChooser(send, "แชร์ PDF / พิมพ์เอกสาร"))
+                            } catch (e: Exception) { error = e.message ?: "สร้าง PDF ไม่สำเร็จ" }
+                        }
+                    }) { Icon(Icons.Default.PictureAsPdf, null); Text("PDF") }
+                }
             },
             dismissButton = { TextButton(onClick = { selected = null }) { Text("ปิด") } }
         )
@@ -180,7 +192,7 @@ private fun DocumentForm(
         },
         confirmButton = { TextButton(onClick = {
             val q = qty.toDoubleOrNull(); val p = price.toDoubleOrNull(); val w = whRate.toDoubleOrNull() ?: 0.0
-            if (party.isBlank() || q == null || p == null || q <= 0 || p < 0 || (type != "withholding_certificate" && description.isBlank())) error = "กรุณาตรวจสอบชื่อ รายการ จำนวน และราคา"
+            if (party.isBlank() || q == null || p == null || q <= 0 || p < 0 || description.isBlank()) error = "กรุณาตรวจสอบชื่อ รายการ จำนวน และราคา"
             else if (taxId.isNotBlank() && taxId.length != 13) error = "เลขผู้เสียภาษีต้องมี 13 หลัก"
             else if (w !in 0.0..100.0) error = "อัตราหักภาษีไม่ถูกต้อง"
             else onSave(type, party, taxId, address, due.ifBlank { null }, description, q, p, mode, notes, income, w)
