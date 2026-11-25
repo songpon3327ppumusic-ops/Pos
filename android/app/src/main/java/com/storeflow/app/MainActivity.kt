@@ -157,6 +157,7 @@ private fun LoginScreen() {
     var inviteCode by rememberSaveable { mutableStateOf("") }
     var mode by rememberSaveable { mutableStateOf("login") }
     var pendingMode by rememberSaveable { mutableStateOf("") }
+    var consentAccepted by rememberSaveable { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var info by remember { mutableStateOf<String?>(null) }
@@ -203,6 +204,15 @@ private fun LoginScreen() {
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodySmall)
                 }
+                if (mode != "login") {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = consentAccepted, onCheckedChange = { consentAccepted = it })
+                        Text("ฉันยินยอมให้ประมวลผลข้อมูลส่วนบุคคล และยอมรับข้อกำหนดการใช้งานกับนโยบายความเป็นส่วนตัว", style = MaterialTheme.typography.bodySmall)
+                    }
+                    TextButton(onClick = { runCatching { (LocalContext.current as Context).startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://benz-verse.com/storeflow-privacy"))) } }) {
+                        Text("อ่านนโยบายความเป็นส่วนตัว")
+                    }
+                }
                 if (mode == "join") {
                     OutlinedTextField(inviteCode, { inviteCode = it.uppercase() },
                         label = { Text("รหัสเชิญจากเจ้าของร้าน") }, singleLine = true,
@@ -215,13 +225,14 @@ private fun LoginScreen() {
                                 "login" -> {
                                     repo.signIn(email.trim(), password)
                                     when (pendingMode) {
-                                        "create" -> { repo.createStore(storeName); pendingMode = "" }
-                                        "join" -> { repo.joinStore(inviteCode); pendingMode = "" }
+                                        "create" -> { repo.recordPrivacyConsent(); repo.createStore(storeName); pendingMode = "" }
+                                        "join" -> { repo.recordPrivacyConsent(); repo.joinStore(inviteCode); pendingMode = "" }
                                     }
                                 }
                                 "create" -> {
                                     repo.signUp(email.trim(), password)
                                     if (StoreFlowSupabase.client.auth.currentSessionOrNull() != null) {
+                                        repo.recordPrivacyConsent()
                                         repo.createStore(storeName)
                                     } else {
                                         pendingMode = "create"
@@ -232,6 +243,7 @@ private fun LoginScreen() {
                                 "join" -> {
                                     repo.signUp(email.trim(), password)
                                     if (StoreFlowSupabase.client.auth.currentSessionOrNull() != null) {
+                                        repo.recordPrivacyConsent()
                                         repo.joinStore(inviteCode)
                                     } else {
                                         pendingMode = "join"
@@ -243,8 +255,8 @@ private fun LoginScreen() {
                         }
                     },
                     enabled = !busy && email.contains("@") && password.length >= 8 &&
-                        (mode == "login" || (mode == "create" && storeName.isNotBlank()) ||
-                            (mode == "join" && inviteCode.isNotBlank())),
+                        (mode == "login" || (consentAccepted && mode == "create" && storeName.isNotBlank()) ||
+                            (consentAccepted && mode == "join" && inviteCode.isNotBlank())),
                     modifier = Modifier.fillMaxWidth().height(50.dp)
                 ) { Text(if (busy) "กำลังดำเนินการ..." else when(mode) {
                     "create" -> "สมัครและเปิดร้านค้า"
@@ -1370,6 +1382,9 @@ private fun SettingsScreen(
                     Text(store.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     Text("สิทธิ์: $role")
                     Text(email, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    TextButton(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://benz-verse.com/storeflow-privacy"))) }) {
+                        Text("นโยบายความเป็นส่วนตัวและ PDPA")
+                    }
                 }
             }
         }
