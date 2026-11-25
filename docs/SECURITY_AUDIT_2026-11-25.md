@@ -65,6 +65,10 @@ This is a source/configuration/database security review of the StoreFlow reposit
 
 All database test transactions were rolled back; no test sale or test organization was retained.
 
+## Historical payment records requiring owner reconciliation
+
+Four existing sales were found with `payment_status = paid` and bank-transfer/PromptPay methods but no stored slip or transaction reference. They were marked `legacy_unverified` rather than silently treated as verified or automatically reversed. The owner must reconcile these four receipts against the actual bank statement before relying on the historical paid status.
+
 ## Remaining risks and owner actions
 
 ### High priority
