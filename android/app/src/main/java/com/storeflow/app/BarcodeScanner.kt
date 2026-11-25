@@ -1,7 +1,6 @@
 package com.storeflow.app
 
 import android.Manifest
-import android.app.Activity
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -21,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import java.util.concurrent.atomic.AtomicBoolean
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.common.InputImage
 import java.util.concurrent.Executors
@@ -56,7 +56,18 @@ fun BarcodeScanButton(onBarcode: (String) -> Unit) {
 private fun BarcodeScannerDialog(onDismiss: () -> Unit, onResult: (String) -> Unit) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val scanner = remember { BarcodeScanning.getClient() }
+    val executor = remember { Executors.newSingleThreadExecutor() }
+    val scanned = remember { AtomicBoolean(false) }
+    var cameraProvider by remember { mutableStateOf<ProcessCameraProvider?>(null) }
     var scanError by remember { mutableStateOf<String?>(null) }
+    DisposableEffect(lifecycleOwner) {
+        onDispose {
+            cameraProvider?.unbindAll()
+            scanner.close()
+            executor.shutdown()
+        }
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("สแกนบาร์โค้ดสินค้า") },
@@ -67,11 +78,10 @@ private fun BarcodeScannerDialog(onDismiss: () -> Unit, onResult: (String) -> Un
                     factory = { ctx ->
                         val previewView = PreviewView(ctx)
                         val providerFuture = ProcessCameraProvider.getInstance(ctx)
-                        val executor = Executors.newSingleThreadExecutor()
-                        val scanner = BarcodeScanning.getClient()
                         providerFuture.addListener({
                             try {
                                 val provider = providerFuture.get()
+                                cameraProvider = provider
                                 val preview = Preview.Builder().build().also { it.setSurfaceProvider(previewView.surfaceProvider) }
                                 val analysis = ImageAnalysis.Builder().setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST).build()
                                 analysis.setAnalyzer(executor) { proxy ->
@@ -79,7 +89,10 @@ private fun BarcodeScannerDialog(onDismiss: () -> Unit, onResult: (String) -> Un
                                     if (media == null) { proxy.close() } else {
                                         val image = InputImage.fromMediaImage(media, proxy.imageInfo.rotationDegrees)
                                         scanner.process(image)
-                                            .addOnSuccessListener { codes -> codes.firstOrNull { !it.rawValue.isNullOrBlank() }?.rawValue?.let(onResult) }
+                                            .addOnSuccessListener { codes ->
+                                                val value = codes.firstOrNull { !it.rawValue.isNullOrBlank() }?.rawValue
+                                                if (!value.isNullOrBlank() && scanned.compareAndSet(false, true)) onResult(value)
+                                            }
                                             .addOnFailureListener { scanError = it.message ?: "อ่านบาร์โค้ดไม่สำเร็จ" }
                                             .addOnCompleteListener { proxy.close() }
                                     }
