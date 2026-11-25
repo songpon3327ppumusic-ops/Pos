@@ -10,6 +10,8 @@ import android.webkit.WebViewClient
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -44,6 +46,7 @@ import io.github.jan.supabase.auth.handleDeeplinks
 import io.github.jan.supabase.auth.status.SessionStatus
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.text.NumberFormat
@@ -292,6 +295,7 @@ private fun Workspace() {
     var role by remember { mutableStateOf("") }
     var products by remember { mutableStateOf(emptyList<StoreProduct>()) }
     var metrics by remember { mutableStateOf(StoreMetrics()) }
+    var lastUpdated by remember { mutableStateOf("-") }
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var loading by remember { mutableStateOf(true) }
     var busy by remember { mutableStateOf(false) }
@@ -317,6 +321,7 @@ private fun Workspace() {
             val list = withContext(Dispatchers.IO) { repo.products(active.id) }
             metrics = withContext(Dispatchers.IO) { repo.metrics(active.id, list) }
             products = list
+            lastUpdated = java.time.LocalDateTime.now(ZoneId.of("Asia/Bangkok")).format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm"))
             error = null
         } catch (e: Exception) { error = e.message ?: "โหลดข้อมูลไม่สำเร็จ" }
         finally { busy = false }
@@ -383,7 +388,7 @@ private fun Workspace() {
         }
     ) { padding ->
         when (tab) {
-            0 -> Dashboard(Modifier.padding(padding), active.name, metrics, error)
+            0 -> Dashboard(Modifier.padding(padding), active.name, metrics, error, lastUpdated)
             1 -> PosScreen(Modifier.padding(padding), active.id, products, repo, role) { scope.launch { refresh() } }
             2 -> ProductsScreen(Modifier.padding(padding), active.id, products, repo,
                 role in listOf("owner", "admin", "manager")) { scope.launch { refresh() } }
@@ -401,7 +406,19 @@ private fun Workspace() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun Dashboard(modifier: Modifier, storeName: String, metrics: StoreMetrics, error: String?) {
+private fun Dashboard(modifier: Modifier, storeName: String, metrics: StoreMetrics, error: String?, lastUpdated: String) {
+    val context = LocalContext.current
+    var online by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            val manager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            val network = manager.activeNetwork
+            val caps = manager.getNetworkCapabilities(network)
+            online = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true &&
+                caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+            delay(5000)
+        }
+    }
     LazyColumn(modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
             Text("ภาพรวมร้านค้า", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
@@ -413,7 +430,7 @@ private fun Dashboard(modifier: Modifier, storeName: String, metrics: StoreMetri
                     Text("ยอดขายวันนี้", color = Color(0xFFD1E9E2))
                     Text(money(metrics.todaySales), color = Color.White,
                         style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                    Text("ข้อมูลยอดขายจากร้านค้า • ซิงก์เมื่อเชื่อมต่ออินเทอร์เน็ต", color = Color(0xFFD1E9E2))
+                    Text((if (online) "ออนไลน์" else "ออฟไลน์") + " • อัปเดตล่าสุด " + lastUpdated, color = Color(0xFFD1E9E2))
                 }
             }
         }
