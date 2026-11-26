@@ -124,8 +124,7 @@ class MainActivity : ComponentActivity() {
 private data class Tab(val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector)
 private val tabs = listOf(
     Tab("ภาพรวม", Icons.Default.Storefront), Tab("ขาย", Icons.Default.PointOfSale),
-    Tab("สินค้า", Icons.Default.Inventory2), Tab("รายงาน", Icons.Default.BarChart),
-    Tab("ทีมงาน", Icons.Default.Groups), Tab("เอกสาร", Icons.Default.Description), Tab("ตั้งค่า", Icons.Default.Settings)
+    Tab("สินค้า", Icons.Default.Inventory2), Tab("รายงาน", Icons.Default.BarChart)
 )
 
 @Composable
@@ -309,6 +308,8 @@ private fun Workspace() {
     var metrics by remember { mutableStateOf(StoreMetrics()) }
     var lastUpdated by remember { mutableStateOf("-") }
     var tab by rememberSaveable { mutableIntStateOf(0) }
+    var extraScreen by rememberSaveable { mutableStateOf("") }
+    val drawerState = rememberDrawerState(DrawerValue.Closed)
     var loading by remember { mutableStateOf(true) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -372,46 +373,97 @@ private fun Workspace() {
         return
     }
     val active = store!!
-    Scaffold(
-        containerColor = Page,
-        topBar = {
-            TopAppBar(
-                title = { Column {
-                    Text("StoreFlow", fontWeight = FontWeight.Bold)
-                    if (!active.name.equals("StoreFlow", ignoreCase = true)) {
-                        Text(active.name, style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                } },
-                actions = { IconButton(onClick = { scope.launch { refresh() } }, enabled = !busy) {
-                    if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                    else Icon(Icons.Default.Refresh, "รีเฟรช")
-                } },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Page)
-            )
-        },
-        bottomBar = {
-            NavigationBar(containerColor = Color.White) {
-                tabs.forEachIndexed { index, item ->
-                    NavigationBarItem(selected = tab == index, onClick = { tab = index },
-                        icon = { Icon(item.icon, item.label) }, label = { Text(item.label) })
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            ModalDrawerSheet {
+                Column(Modifier.fillMaxWidth().padding(18.dp)) {
+                    Text("StoreFlow", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text(active.name, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+                HorizontalDivider()
+                NavigationDrawerItem(
+                    label = { Text("ทีมงาน / กะงาน / เงินเดือน") },
+                    icon = { Icon(Icons.Default.Groups, null) },
+                    selected = extraScreen == "workforce",
+                    onClick = { extraScreen = "workforce"; scope.launch { drawerState.close() } }
+                )
+                NavigationDrawerItem(
+                    label = { Text("เอกสาร") }, icon = { Icon(Icons.Default.Description, null) },
+                    selected = extraScreen == "documents",
+                    onClick = { extraScreen = "documents"; scope.launch { drawerState.close() } }
+                )
+                NavigationDrawerItem(
+                    label = { Text("ตั้งค่าร้านและ QR") }, icon = { Icon(Icons.Default.Settings, null) },
+                    selected = extraScreen == "settings",
+                    onClick = { extraScreen = "settings"; scope.launch { drawerState.close() } }
+                )
+                NavigationDrawerItem(
+                    label = { Text("แพ็กเกจ Basic / Standard / Premium / ซื้อขาด") },
+                    icon = { Icon(Icons.Default.WorkspacePremium, null) },
+                    selected = extraScreen == "plans",
+                    onClick = { extraScreen = "plans"; scope.launch { drawerState.close() } }
+                )
+                HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                NavigationDrawerItem(
+                    label = { Text("ออกจากระบบ") }, icon = { Icon(Icons.Default.Logout, null) },
+                    selected = false, onClick = { scope.launch { drawerState.close(); repo.signOut() } }
+                )
             }
         }
-    ) { padding ->
-        when (tab) {
-            0 -> Dashboard(Modifier.padding(padding), active.name, metrics, error, lastUpdated)
-            1 -> PosScreen(Modifier.padding(padding), active.id, products, repo, role) { scope.launch { refresh() } }
-            2 -> ProductsScreen(Modifier.padding(padding), active.id, products, repo,
-                role in listOf("owner", "admin", "manager")) { scope.launch { refresh() } }
-            3 -> ReportsScreen(Modifier.padding(padding), metrics, products)
-            4 -> WorkforceScreen(Modifier.padding(padding), active.id, repo,
-                role in listOf("owner", "admin", "hr"))
-            5 -> DocumentsScreen(Modifier.padding(padding), active.id, DocumentsRepository(client))
-            else -> SettingsScreen(Modifier.padding(padding), active, role,
-                client.auth.currentUserOrNull()?.email.orEmpty(), repo,
-                onSwitch = { store = null },
-                onSignOut = { scope.launch { repo.signOut() } })
+    ) {
+        Scaffold(
+            containerColor = Page,
+            topBar = {
+                TopAppBar(
+                    navigationIcon = {
+                        IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                            Icon(Icons.Default.Menu, contentDescription = "เปิดเมนู")
+                        }
+                    },
+                    title = { Column {
+                        Text("StoreFlow", fontWeight = FontWeight.Bold)
+                        if (!active.name.equals("StoreFlow", ignoreCase = true)) {
+                            Text(active.name, style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    } },
+                    actions = { IconButton(onClick = { scope.launch { refresh() } }, enabled = !busy) {
+                        if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                        else Icon(Icons.Default.Refresh, "รีเฟรช")
+                    } },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = Page)
+                )
+            },
+            bottomBar = {
+                NavigationBar(containerColor = Color.White) {
+                    tabs.forEachIndexed { index, item ->
+                        NavigationBarItem(selected = extraScreen.isEmpty() && tab == index,
+                            onClick = { tab = index; extraScreen = "" },
+                            icon = { Icon(item.icon, item.label) }, label = { Text(item.label) })
+                    }
+                }
+            }
+        ) { padding ->
+            when (extraScreen) {
+                "workforce" -> WorkforceScreen(Modifier.padding(padding), active.id, repo,
+                    role in listOf("owner", "admin", "hr"))
+                "documents" -> DocumentsScreen(Modifier.padding(padding), active.id, DocumentsRepository(client))
+                "settings" -> SettingsScreen(Modifier.padding(padding), active, role,
+                    client.auth.currentUserOrNull()?.email.orEmpty(), repo,
+                    onSwitch = { store = null },
+                    onSignOut = { scope.launch { repo.signOut() } })
+                "plans" -> StoreFlowPlansScreen(Modifier.padding(padding), active.id, repo,
+                    runCatching { repo.subscription(active.id) }.getOrNull(),
+                    onSubscriptionChanged = { scope.launch { refresh() } })
+                else -> when (tab) {
+                    0 -> Dashboard(Modifier.padding(padding), active.name, metrics, error, lastUpdated)
+                    1 -> PosScreen(Modifier.padding(padding), active.id, products, repo, role) { scope.launch { refresh() } }
+                    2 -> ProductsScreen(Modifier.padding(padding), active.id, products, repo,
+                        role in listOf("owner", "admin", "manager")) { scope.launch { refresh() } }
+                    else -> ReportsScreen(Modifier.padding(padding), metrics, products)
+                }
+            }
         }
     }
 }
