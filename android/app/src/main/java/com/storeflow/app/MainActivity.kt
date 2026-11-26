@@ -22,6 +22,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -501,7 +502,13 @@ private fun Workspace() {
                     onSubscriptionChanged = { scope.launch { refresh() } })
                 else -> when (tab) {
                     0 -> Dashboard(Modifier.padding(padding), active.name, metrics, error, lastUpdated,
-                        onQuickAction = { destination -> tab = destination; extraScreen = "" })
+                        onQuickAction = { destination ->
+                            when (destination) {
+                                "workforce" -> extraScreen = "workforce"
+                                "pos" -> { tab = 1; extraScreen = "" }
+                                "products" -> { tab = 2; extraScreen = "" }
+                            }
+                        })
                     1 -> PosScreen(Modifier.padding(padding), active.id, products, repo, role, permissions,
                         onUpgrade = { extraScreen = "plans" },
                         onOpenSettings = { extraScreen = "settings" }) { scope.launch { refresh() } }
@@ -523,7 +530,7 @@ private fun Workspace() {
 @Composable
 private fun Dashboard(
     modifier: Modifier, storeName: String, metrics: StoreMetrics, error: String?, lastUpdated: String,
-    onQuickAction: (Int) -> Unit
+    onQuickAction: (String) -> Unit
 ) {
     val context = LocalContext.current
     var online by remember { mutableStateOf(false) }
@@ -560,12 +567,12 @@ private fun Dashboard(
             Text("ช่องทางลัด", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf(
-                    Triple("ขายด่วน", Icons.Default.PointOfSale, 1),
-                    Triple("เพิ่มสินค้า", Icons.Default.AddBox, 2),
-                    Triple("ลงเวลากะ", Icons.Default.AccessTime, 0)
+                    Triple("ขายด่วน", Icons.Default.PointOfSale, "pos"),
+                    Triple("เพิ่มสินค้า", Icons.Default.AddBox, "products"),
+                    Triple("ลงเวลากะ", Icons.Default.AccessTime, "workforce")
                 ).forEach { action ->
                     Card(
-                        onClick = { if (action.third == 0) onQuickAction(0) else onQuickAction(action.third) },
+                        onClick = { onQuickAction(action.third) },
                         modifier = Modifier.weight(1f),
                         colors = CardDefaults.cardColors(containerColor = Color.White),
                         shape = RoundedCornerShape(16.dp)
@@ -579,8 +586,6 @@ private fun Dashboard(
                     }
                 }
             }
-            Text("หมายเหตุ: ปุ่มลงเวลากะเปิดหน้าภาพรวม เนื่องจากต้องเลือกบัญชีพนักงาน/กะที่ถูกต้องก่อนลงเวลา",
-                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         item { LowStockNotificationPrompt(metrics.lowStockCount) }
         error?.let { msg -> item { Text(msg, color = MaterialTheme.colorScheme.error) } }
@@ -664,6 +669,20 @@ private fun ProductsScreen(
                                 p.stock <= 0 -> Text("หมดสต็อก", color = Color(0xFFB42318), style = MaterialTheme.typography.labelSmall)
                                 p.stock <= p.minStock -> Text("ใกล้หมด", color = Color(0xFFB54708), style = MaterialTheme.typography.labelSmall)
                                 else -> Text("พร้อมขาย", color = Color(0xFF18794E), style = MaterialTheme.typography.labelSmall)
+                            }
+                            if (canManage) Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(onClick = {
+                                    scope.launch {
+                                        runCatching { repo.adjustStock(orgId, p.id, -1.0, "ปรับสต็อกด่วน -1") }
+                                            .onSuccess { onChanged() }
+                                    }
+                                }, enabled = p.stock >= 1) { Icon(Icons.Default.RemoveCircleOutline, "ลดสต็อก 1") }
+                                IconButton(onClick = {
+                                    scope.launch {
+                                        runCatching { repo.adjustStock(orgId, p.id, 1.0, "ปรับสต็อกด่วน +1") }
+                                            .onSuccess { onChanged() }
+                                    }
+                                }) { Icon(Icons.Default.AddCircleOutline, "เพิ่มสต็อก 1") }
                             }
                         }
                     }
@@ -858,6 +877,8 @@ private fun PosScreen(
         }
     }
     var search by rememberSaveable { mutableStateOf("") }
+    var selectedCategory by rememberSaveable { mutableStateOf("ทั้งหมด") }
+    val categories = remember(products) { listOf("ทั้งหมด") + products.mapNotNull { it.category?.takeIf(String::isNotBlank) }.distinct().sorted() }
     var paymentDialog by remember { mutableStateOf(false) }
     var cashDialog by remember { mutableStateOf(false) }
     var promptPayDialog by remember { mutableStateOf(false) }
@@ -875,8 +896,9 @@ private fun PosScreen(
     val selected = products.filter { (cart[it.id] ?: 0.0) > 0 }
     val total = selected.sumOf { it.price * (cart[it.id] ?: 0.0) }
     val filtered = products.filter { p ->
-        search.isBlank() || p.name.contains(search, true) ||
-            p.sku.contains(search, true) || p.barcode.orEmpty().contains(search, true)
+        (selectedCategory == "ทั้งหมด" || p.category == selectedCategory) &&
+            (search.isBlank() || p.name.contains(search, true) ||
+                p.sku.contains(search, true) || p.barcode.orEmpty().contains(search, true))
     }
     LaunchedEffect(orgId) {
         runCatching { paymentSettings = repo.storePaymentSettings(orgId) }
@@ -896,6 +918,12 @@ private fun PosScreen(
                 if (search.isNotBlank()) IconButton(onClick = { search = "" }) { Icon(Icons.Default.Close, "ล้าง") }
             } }
         )
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp), contentPadding = PaddingValues(vertical = 4.dp)) {
+            items(categories) { category ->
+                FilterChip(selected = selectedCategory == category, onClick = { selectedCategory = category },
+                    label = { Text(category) })
+            }
+        }
         LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(7.dp)) {
             if (filtered.isEmpty()) item { EmptyCard("ไม่พบสินค้า", "ตรวจสอบคำค้นหา SKU หรือบาร์โค้ด") }
             items(filtered, key = { it.id }) { p ->
@@ -905,6 +933,11 @@ private fun PosScreen(
                             Text(p.name, fontWeight = FontWeight.SemiBold)
                             Text(money(p.price) + " • คงเหลือ " + qty(p.stock),
                                 style = MaterialTheme.typography.bodySmall)
+                            Text(
+                                when { p.stock <= 0 -> "หมดสต็อก"; p.stock <= p.minStock -> "ใกล้หมด"; else -> "พร้อมขาย" },
+                                color = when { p.stock <= 0 -> Color(0xFFB42318); p.stock <= p.minStock -> Color(0xFFB54708); else -> Color(0xFF18794E) },
+                                style = MaterialTheme.typography.labelSmall
+                            )
                         }
                         IconButton(enabled = (cart[p.id] ?: 0.0) > 0, onClick = {
                             val n = (cart[p.id] ?: 0.0) - 1
