@@ -94,7 +94,7 @@ data class PlanPermissions(
             isSuperAdmin || isLifetime -> PlanTier.LIFETIME
             isTrialActive -> PlanTier.STANDARD
             isExpired -> PlanTier.UNKNOWN
-            planStatus == PlanStatus.FREE || planTier == PlanTier.FREE -> PlanTier.FREE
+            planTier == PlanTier.FREE -> PlanTier.FREE
             planTier == PlanTier.PREMIUM -> PlanTier.PREMIUM
             planTier == PlanTier.STANDARD -> PlanTier.STANDARD
             planTier == PlanTier.BASIC -> PlanTier.BASIC
@@ -113,7 +113,7 @@ data class PlanPermissions(
             isSuperAdmin || isLifetime -> "ใช้งานอยู่ • Lifetime"
             isTrialActive -> "ทดลองใช้ Standard"
             isExpired -> "หมดอายุ / รอชำระ"
-            planStatus == PlanStatus.FREE || effectiveTier == PlanTier.FREE -> "ใช้งานฟรีตลอดชีพ"
+            effectiveTier == PlanTier.FREE -> "ใช้งานฟรีตลอดชีพ"
             planStatus == PlanStatus.ACTIVE -> "ใช้งานอยู่"
             else -> "ยังไม่มีข้อมูลแพ็กเกจ"
         }
