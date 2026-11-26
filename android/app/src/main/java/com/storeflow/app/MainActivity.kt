@@ -398,7 +398,7 @@ private fun Workspace() {
                     label = { Text("เอกสาร") }, icon = { Icon(Icons.Default.Description, null) },
                     selected = extraScreen == "documents",
                     onClick = {
-                        if (permissions.isExpired || permissions.hasFeature(StoreFeature.TAX_DOCUMENTS)) extraScreen = "documents"
+                        if (permissions.isExpired || permissions.hasFeature(StoreFeature.BUSINESS_DOCUMENTS) || permissions.hasFeature(StoreFeature.TAX_DOCUMENTS)) extraScreen = "documents"
                         else showUpgradeDialog = true
                         scope.launch { drawerState.close() }
                     }
@@ -465,7 +465,9 @@ private fun Workspace() {
                 "workforce" -> WorkforceScreen(Modifier.padding(padding), active.id, repo,
                     role in listOf("owner", "admin", "hr"), permissions,
                     onUpgrade = { extraScreen = "plans" })
-                "documents" -> DocumentsScreen(Modifier.padding(padding), active.id, DocumentsRepository(client), readOnly = permissions.isExpired)
+                "documents" -> DocumentsScreen(Modifier.padding(padding), active.id, DocumentsRepository(client),
+                    readOnly = permissions.isExpired,
+                    allowTaxDocuments = permissions.hasFeature(StoreFeature.TAX_DOCUMENTS) || permissions.isExpired)
                 "settings" -> SettingsScreen(Modifier.padding(padding), active, role,
                     client.auth.currentUserOrNull()?.email.orEmpty(), repo, permissions,
                     onUpgrade = { extraScreen = "plans" },
