@@ -69,6 +69,12 @@ fun DocumentsScreen(
     var creating by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf<BusinessDocument?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    var statusFilter by rememberSaveable { mutableStateOf("ทั้งหมด") }
+    val visibleDocuments = documents.filter { statusFilter == "ทั้งหมด" ||
+        (statusFilter == "ร่าง" && it.status.equals("draft", true)) ||
+        (statusFilter == "ออกแล้ว" && it.status.equals("issued", true)) ||
+        (statusFilter == "ยกเลิก" && it.status.equals("cancelled", true))
+    }
     suspend fun refresh() {
         loading = true
         try {
@@ -103,12 +109,22 @@ fun DocumentsScreen(
             if (!readOnly) Button(onClick = { creating = true }) { Icon(Icons.Default.Add, null); Text("สร้าง") }
         }
         Spacer(Modifier.height(12.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            listOf("ทั้งหมด", "ร่าง", "ออกแล้ว", "ยกเลิก").forEach { status ->
+                FilterChip(selected = statusFilter == status, onClick = { statusFilter = status },
+                    label = { Text(status) })
+            }
+        }
         if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         if (readOnly) Text("โหมดดูประวัติเท่านั้น • ต่ออายุแพ็กเกจเพื่อสร้างหรือแก้ไขเอกสาร", color = MaterialTheme.colorScheme.error)
         if (!loading && documents.isEmpty()) Text("ยังไม่มีเอกสาร", modifier = Modifier.padding(20.dp))
+        if (!loading && documents.isNotEmpty() && visibleDocuments.isEmpty()) {
+            Text("ไม่มีเอกสารในสถานะนี้", modifier = Modifier.padding(16.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(documents, key = { it.id }) { doc ->
+            items(visibleDocuments, key = { it.id }) { doc ->
                 Card(Modifier.fillMaxWidth().clickable { selected = doc }) {
                     Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
