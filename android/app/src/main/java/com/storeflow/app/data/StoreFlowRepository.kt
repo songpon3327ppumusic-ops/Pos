@@ -187,6 +187,7 @@ data class StorePaymentSettings(
 
 @Serializable
 data class StoreFlowPlatformSettings(
+    val id: Boolean = true,
     @SerialName("custom_qr_url") val customQrUrl: String? = null,
     @SerialName("account_name") val accountName: String? = null,
     @SerialName("account_number") val accountNumber: String? = null,
@@ -412,6 +413,22 @@ class StoreFlowRepository(private val client: SupabaseClient) {
             order("created_at", Order.DESCENDING)
             limit(30)
         }.decodeList()
+
+    suspend fun allPendingPlanPaymentRequests(): List<StoreFlowPlanPaymentRequest> =
+        client.from("storeflow_plan_payment_requests").select {
+            filter { eq("status", "pending_review") }
+            order("created_at", Order.ASCENDING)
+            limit(200)
+        }.decodeList()
+
+    suspend fun reviewPlanPayment(requestId: String, approve: Boolean, note: String? = null) {
+        val params = buildJsonObject {
+            put("p_request_id", requestId)
+            put("p_approve", approve)
+            if (note.isNullOrBlank()) put("p_admin_note", JsonNull) else put("p_admin_note", note)
+        }
+        client.postgrest.rpc("storeflow_review_plan_payment", params)
+    }
 
     suspend fun saveStorePaymentSettings(settings: StorePaymentSettings) {
         require(client.auth.currentUserOrNull()?.id != null) { "กรุณาเข้าสู่ระบบใหม่" }
