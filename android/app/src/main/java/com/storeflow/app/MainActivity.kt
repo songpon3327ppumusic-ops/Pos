@@ -1000,13 +1000,12 @@ private fun PromptPayCheckoutDialog(
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("ยอดที่ต้องโอน", style = MaterialTheme.typography.labelLarge)
                 Text(money(total), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                when {
-                    customQrBitmap != null -> Image(customQrBitmap.asImageBitmap(), contentDescription = "QR รับเงินของร้าน",
+                if (customQrBitmap != null) {
+                    Image(customQrBitmap.asImageBitmap(), contentDescription = "QR รับเงินของร้าน",
                         modifier = Modifier.fillMaxWidth().height(210.dp))
-                    qrBitmap != null -> Image(qrBitmap.asImageBitmap(), contentDescription = "PromptPay QR",
-                        modifier = Modifier.fillMaxWidth().height(210.dp))
-                    else -> OutlinedButton(onClick = onOpenSettings, modifier = Modifier.fillMaxWidth()) {
-                        Text("ยังไม่มี QR — ไปตั้งค่าแนบรูป QR ของร้าน")
+                } else {
+                    OutlinedButton(onClick = onOpenSettings, modifier = Modifier.fillMaxWidth()) {
+                        Text("ยังไม่มีรูป QR — ไปตั้งค่าแนบรูป QR ของร้านก่อน")
                     }
                 }
                 Text("ชื่อบัญชี: ${settings?.bankAccountName ?: settings?.promptpayName ?: "-"}")
