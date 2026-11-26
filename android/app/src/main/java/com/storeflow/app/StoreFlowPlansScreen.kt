@@ -64,6 +64,7 @@ fun StoreFlowPlansScreen(
     var slipBytes by remember { mutableStateOf<ByteArray?>(null) }
     var transactionRef by remember { mutableStateOf("") }
     var requests by remember { mutableStateOf(emptyList<com.storeflow.app.data.StoreFlowPlanPaymentRequest>()) }
+    var adminRequests by remember { mutableStateOf(emptyList<com.storeflow.app.data.StoreFlowPlanPaymentRequest>()) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
@@ -81,6 +82,7 @@ fun StoreFlowPlansScreen(
         }
         requests = repository.planPaymentRequests(organizationId)
         platformAdmin = repository.isPlatformAdmin()
+        adminRequests = if (platformAdmin) repository.allPendingPlanPaymentRequests() else emptyList()
         adminAccountName = platformSettings?.accountName.orEmpty()
         adminAccountNumber = platformSettings?.accountNumber.orEmpty()
         adminBankName = platformSettings?.bankName.orEmpty()
@@ -258,6 +260,46 @@ fun StoreFlowPlansScreen(
                     Text(request.planTier.uppercase() + " • ฿" + request.amountThb.toInt(), fontWeight = FontWeight.Bold)
                     Text("สถานะ: " + request.status)
                     Text("วันที่: " + formatThaiDateTime(request.createdAt), style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+        if (platformAdmin) item {
+            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("คำขอเปิดแพ็กเกจที่รออนุมัติ", fontWeight = FontWeight.Bold)
+                    if (adminRequests.isEmpty()) Text("ไม่มีคำขอรอตรวจสอบ")
+                    adminRequests.forEach { request ->
+                        HorizontalDivider()
+                        Text(request.planTier.uppercase() + " • ฿" + request.amountThb.toInt(),
+                            fontWeight = FontWeight.SemiBold)
+                        Text("ร้าน: " + request.organizationId.take(8) + "…")
+                        Text("เลขอ้างอิง: " + (request.transactionRef ?: "-"))
+                        Text("ไฟล์สลิป: " + (request.slipPath ?: "-"), style = MaterialTheme.typography.bodySmall)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(enabled = !busy, onClick = {
+                                scope.launch {
+                                    busy = true
+                                    try {
+                                        repository.reviewPlanPayment(request.id, true, "ตรวจสอบยอดโอนและอนุมัติโดยผู้ดูแล")
+                                        reload()
+                                        message = "อนุมัติแพ็กเกจให้ร้านเรียบร้อย"
+                                    } catch (e: Exception) { error = e.message ?: "อนุมัติไม่สำเร็จ" }
+                                    finally { busy = false }
+                                }
+                            }) { Text("อนุมัติ") }
+                            OutlinedButton(enabled = !busy, onClick = {
+                                scope.launch {
+                                    busy = true
+                                    try {
+                                        repository.reviewPlanPayment(request.id, false, "สลิปหรือยอดชำระไม่ผ่านการตรวจสอบ")
+                                        reload()
+                                        message = "ปฏิเสธคำขอแล้ว"
+                                    } catch (e: Exception) { error = e.message ?: "ปฏิเสธไม่สำเร็จ" }
+                                    finally { busy = false }
+                                }
+                            }) { Text("ปฏิเสธ") }
+                        }
+                    }
                 }
             }
         }
