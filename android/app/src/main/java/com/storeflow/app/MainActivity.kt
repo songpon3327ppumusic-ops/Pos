@@ -409,7 +409,7 @@ private fun Workspace() {
                     onClick = { extraScreen = "settings"; scope.launch { drawerState.close() } }
                 )
                 NavigationDrawerItem(
-                    label = { Text("แพ็กเกจ Basic / Standard / Premium / ซื้อขาด") },
+                    label = { Text("แพ็กเกจ Free / Basic / Standard / Premium / ซื้อขาด") },
                     icon = { Icon(Icons.Default.WorkspacePremium, null) },
                     selected = extraScreen == "plans",
                     onClick = { extraScreen = "plans"; scope.launch { drawerState.close() } }
@@ -467,13 +467,14 @@ private fun Workspace() {
                     onUpgrade = { extraScreen = "plans" })
                 "documents" -> DocumentsScreen(Modifier.padding(padding), active.id, DocumentsRepository(client),
                     readOnly = permissions.isExpired,
-                    allowTaxDocuments = permissions.hasFeature(StoreFeature.TAX_DOCUMENTS) || permissions.isExpired)
+                    permissions = permissions,
+                    onUpgrade = { extraScreen = "plans" })
                 "settings" -> SettingsScreen(Modifier.padding(padding), active, role,
                     client.auth.currentUserOrNull()?.email.orEmpty(), repo, permissions,
                     onUpgrade = { extraScreen = "plans" },
                     onSwitch = { store = null },
                     onSignOut = { scope.launch { repo.signOut() } })
-                "plans" -> StoreFlowPlansScreen(Modifier.padding(padding), active.id, repo, subscription,
+                "plans" -> StoreFlowPlansScreen(Modifier.padding(padding), active.id, repo, subscription, permissions,
                     onSubscriptionChanged = { scope.launch { refresh() } })
                 else -> when (tab) {
                     0 -> Dashboard(Modifier.padding(padding), active.name, metrics, error, lastUpdated)
@@ -809,8 +810,7 @@ private fun PosScreen(
             singleLine = true, label = { Text("ค้นหาสินค้า / สแกนบาร์โค้ด") },
             leadingIcon = { Icon(Icons.Default.Search, null) },
             trailingIcon = { Row(verticalAlignment = Alignment.CenterVertically) {
-                if (permissions.hasFeature(StoreFeature.BARCODE_SCANNER)) BarcodeScanButton(onBarcode = { search = it })
-                else IconButton(onClick = { showUpgradeDialog = true }) { Icon(Icons.Default.Lock, "สแกนบาร์โค้ดต้องอัปเกรด") }
+                BarcodeScanButton(onBarcode = { search = it })
                 if (search.isNotBlank()) IconButton(onClick = { search = "" }) { Icon(Icons.Default.Close, "ล้าง") }
             } }
         )
@@ -870,10 +870,13 @@ private fun PosScreen(
                     onClick = { paymentDialog = false; cashDialog = true },
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("เงินสด") }
-                if (paymentSettings?.promptpayEnabled == true && permissions.hasFeature(StoreFeature.STORE_PAYMENT_QR)) OutlinedButton(
+                if (paymentSettings?.promptpayEnabled == true) OutlinedButton(
                     onClick = {
-                        if (paymentSettings?.promptpayId.isNullOrBlank()) {
-                            message = "เจ้าของร้านยังไม่ได้ตั้งค่าเบอร์พร้อมเพย์"
+                        if (paymentSettings?.promptpayId.isNullOrBlank() &&
+                            paymentSettings?.customQrUrl.isNullOrBlank() &&
+                            paymentSettings?.qrImagePath.isNullOrBlank()
+                        ) {
+                            message = "เจ้าของร้านยังไม่ได้ตั้งค่าเบอร์พร้อมเพย์หรืออัปโหลดรูป QR"
                         } else {
                             paymentDialog = false; promptPayDialog = true
                         }
@@ -1011,6 +1014,7 @@ private fun PromptPayCheckoutDialog(
     val qrBitmap = remember(settings?.promptpayId, total) {
         runCatching { settings?.promptpayId?.let { PromptPayQr.bitmap(PromptPayQr.payload(it, total)) } }.getOrNull()
     }
+    val displayQrBitmap = customQrBitmap ?: qrBitmap
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri: Uri? ->
         if (uri != null) {
             scope.launch {
@@ -1048,12 +1052,12 @@ private fun PromptPayCheckoutDialog(
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("ยอดที่ต้องโอน", style = MaterialTheme.typography.labelLarge)
                 Text(money(total), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                if (customQrBitmap != null) {
-                    Image(customQrBitmap.asImageBitmap(), contentDescription = "QR รับเงินของร้าน",
+                if (displayQrBitmap != null) {
+                    Image(displayQrBitmap.asImageBitmap(), contentDescription = "QR รับเงินของร้าน",
                         modifier = Modifier.fillMaxWidth().height(210.dp))
                 } else {
                     OutlinedButton(onClick = onOpenSettings, modifier = Modifier.fillMaxWidth()) {
-                        Text("ยังไม่มีรูป QR — ไปตั้งค่าแนบรูป QR ของร้านก่อน")
+                        Text("ยังไม่มี QR — ไปตั้งค่าเบอร์พร้อมเพย์หรืออัปโหลดรูป QR ของร้านก่อน")
                     }
                 }
                 Text("ชื่อบัญชี: ${settings?.bankAccountName ?: settings?.promptpayName ?: "-"}")
@@ -1073,7 +1077,7 @@ private fun PromptPayCheckoutDialog(
             }
         },
         confirmButton = {
-            TextButton(enabled = customQrBitmap != null && slipBytes != null && transactionRef.isNotBlank() && !busy,
+            TextButton(enabled = displayQrBitmap != null && slipBytes != null && transactionRef.isNotBlank() && !busy,
                 onClick = {
                     val bytes = slipBytes ?: return@TextButton
                     scope.launch {
@@ -1160,6 +1164,15 @@ private fun WorkforceScreen(
 
     if (loading) {
         Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+        return
+    }
+    if (!permissions.hasFeature(StoreFeature.STAFF)) {
+        Column(modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("แพ็กเกจ Free ใช้งานได้โดยเจ้าของร้านคนเดียว", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text("อัปเกรดเป็น Basic เพื่อเพิ่มพนักงาน 1 คน หรือ Standard เพื่อเพิ่มพนักงานได้สูงสุด 5 คน")
+            Button(onClick = onUpgrade) { Text("ดูแพ็กเกจ") }
+        }
         return
     }
     if (!canManage) {
@@ -1563,7 +1576,6 @@ private fun SettingsScreen(
     val canManageQr = canManage && permissions.hasFeature(StoreFeature.STORE_PAYMENT_QR)
     var settings by remember(store.id) { mutableStateOf(StorePaymentSettings(store.id)) }
     var merchantQrBitmap by remember(store.id) { mutableStateOf<Bitmap?>(null) }
-    var subscription by remember { mutableStateOf<StoreSubscription?>(null) }
     var promptPayId by remember { mutableStateOf("") }
     var promptPayName by remember { mutableStateOf("") }
     var bankName by remember { mutableStateOf("") }
@@ -1574,6 +1586,8 @@ private fun SettingsScreen(
     var message by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var deleteConfirm by remember { mutableStateOf(false) }
+    var deleteConfirmationText by remember { mutableStateOf("") }
+    var switchConfirm by remember { mutableStateOf(false) }
     var backupJson by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
     val exportBackupLauncher = rememberLauncherForActivityResult(
@@ -1652,22 +1666,45 @@ private fun SettingsScreen(
                     BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
                 }.getOrNull()
             }
-            subscription = repo.subscription(store.id)
         }.onFailure { error = it.message ?: "โหลดการตั้งค่าไม่สำเร็จ" }
     }
 
+    if (switchConfirm) {
+        AlertDialog(
+            onDismissRequest = { switchConfirm = false },
+            title = { Text("เปลี่ยนร้านค้า") },
+            text = { Text("กลับไปหน้ารายชื่อร้านค้าเพื่อเลือกร้านอื่นหรือไม่?") },
+            confirmButton = {
+                TextButton(onClick = { switchConfirm = false; onSwitch() }) { Text("เลือกร้านค้าอื่น") }
+            },
+            dismissButton = { TextButton(onClick = { switchConfirm = false }) { Text("ยกเลิก") } }
+        )
+    }
     if (deleteConfirm) {
         AlertDialog(
-            onDismissRequest = { if (!busy) deleteConfirm = false },
+            onDismissRequest = { if (!busy) { deleteConfirm = false; deleteConfirmationText = "" } },
             title = { Text("ยืนยันลบบัญชีถาวร") },
-            text = { Text("การลบบัญชีไม่สามารถย้อนกลับได้ ร้านที่คุณเป็นเจ้าของคนเดียวจะถูกลบทั้งร้านและไฟล์ที่เกี่ยวข้อง หากร้านมีเจ้าของร่วม ระบบจะเก็บร้านนั้นไว้ หากยังมีพนักงานแต่ไม่มีเจ้าของคนอื่น คุณต้องโอนสิทธิ์เจ้าของก่อน กรุณาส่งออกข้อมูลก่อนดำเนินการ") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("การลบบัญชีไม่สามารถย้อนกลับได้ ร้านที่คุณเป็นเจ้าของคนเดียวจะถูกลบทั้งร้านและไฟล์ที่เกี่ยวข้อง หากร้านมีเจ้าของร่วม ระบบจะเก็บร้านนั้นไว้ หากยังมีพนักงานแต่ไม่มีเจ้าของคนอื่น คุณต้องโอนสิทธิ์เจ้าของก่อน กรุณาส่งออกข้อมูลก่อนดำเนินการ")
+                    Text("พิมพ์ DELETE MY ACCOUNT เพื่อยืนยัน")
+                    OutlinedTextField(
+                        value = deleteConfirmationText,
+                        onValueChange = { deleteConfirmationText = it },
+                        singleLine = true,
+                        label = { Text("DELETE MY ACCOUNT") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
             confirmButton = {
-                TextButton(enabled = !busy, onClick = {
+                TextButton(enabled = !busy && deleteConfirmationText == "DELETE MY ACCOUNT", onClick = {
                     scope.launch {
                         busy = true; error = null
                         try {
                             repo.deleteAccountPermanently()
                             deleteConfirm = false
+                            deleteConfirmationText = ""
                             onSignOut()
                         } catch (e: Exception) {
                             error = e.message ?: "ลบบัญชีไม่สำเร็จ"
@@ -1675,7 +1712,7 @@ private fun SettingsScreen(
                     }
                 }) { Text(if (busy) "กำลังลบ..." else "ยืนยันลบบัญชี") }
             },
-            dismissButton = { TextButton(onClick = { deleteConfirm = false }, enabled = !busy) { Text("ยกเลิก") } }
+            dismissButton = { TextButton(onClick = { deleteConfirm = false; deleteConfirmationText = "" }, enabled = !busy) { Text("ยกเลิก") } }
         )
     }
     LazyColumn(modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1700,11 +1737,6 @@ private fun SettingsScreen(
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("ตั้งค่าการรับชำระเงิน", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     if (!canManage) Text("เฉพาะเจ้าของร้านเท่านั้นที่แก้ไขได้")
-                    if (!permissions.hasFeature(StoreFeature.STORE_PAYMENT_QR)) {
-                        Text("การตั้งค่า QR รับเงินต้องใช้แพ็กเกจ Standard ขึ้นไป",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        TextButton(onClick = onUpgrade) { Text("อัปเกรดแพ็กเกจ") }
-                    }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("เงินสด", Modifier.weight(1f)); Switch(settings.cashEnabled,
                             { settings = settings.copy(cashEnabled = it) }, enabled = canManage)
@@ -1713,7 +1745,7 @@ private fun SettingsScreen(
                         Text("PromptPay / QR", Modifier.weight(1f)); Switch(settings.promptpayEnabled,
                             { settings = settings.copy(promptpayEnabled = it) }, enabled = canManageQr)
                     }
-                    OutlinedTextField(promptPayId, { promptPayId = it.filter(Char::isDigit) },
+                    OutlinedTextField(promptPayId, { promptPayId = it.filter(Char::isDigit).take(13) },
                         label = { Text("เบอร์พร้อมเพย์ 10 หลัก หรือเลขบัตร 13 หลัก") },
                         enabled = canManageQr, singleLine = true, modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(promptPayName, { promptPayName = it },
@@ -1730,12 +1762,12 @@ private fun SettingsScreen(
                         enabled = canManage, singleLine = true, modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(bankAccountNumber, { bankAccountNumber = it }, label = { Text("เลขบัญชี") },
                         enabled = canManage, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    if (permissions.hasFeature(StoreFeature.STORE_PAYMENT_QR)) merchantQrBitmap?.let { Image(it.asImageBitmap(), contentDescription = "QR รับเงินของร้าน",
+                    merchantQrBitmap?.let { Image(it.asImageBitmap(), contentDescription = "QR รับเงินของร้าน",
                         modifier = Modifier.fillMaxWidth().height(190.dp)) }
                     if (canManageQr) {
                         OutlinedButton(onClick = { qrPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
                             enabled = !busy, modifier = Modifier.fillMaxWidth()) {
-                            Text(if (settings.customQrUrl == null && settings.qrImagePath == null) "อัปโหลด QR ประจำร้าน" else "เปลี่ยนรูป QR ประจำร้าน")
+                            Text(if (settings.customQrUrl == null && settings.qrImagePath == null) "อัปโหลดรูปภาพ QR Code ของร้าน" else "เปลี่ยนรูปภาพ QR Code ของร้าน")
                         }
                         if (merchantQrBitmap != null) Text("QR นี้จะแสดงให้ลูกค้าในหน้าชำระเงิน POS", color = MaterialTheme.colorScheme.primary)
                     }
@@ -1745,8 +1777,12 @@ private fun SettingsScreen(
                             scope.launch {
                                 busy = true; error = null; message = null
                                 try {
-                                    require(!settings.promptpayEnabled || promptPayId.length == 10 || promptPayId.length == 13) {
-                                        "กรุณากรอกเบอร์พร้อมเพย์ 10 หลัก หรือเลขบัตร 13 หลัก"
+                                    require(
+                                        !settings.promptpayEnabled ||
+                                            promptPayId.length == 10 || promptPayId.length == 13 ||
+                                            !settings.customQrUrl.isNullOrBlank() || !settings.qrImagePath.isNullOrBlank()
+                                    ) {
+                                        "กรุณากรอกเบอร์พร้อมเพย์ 10/13 หลัก หรืออัปโหลดรูป QR ของร้าน"
                                     }
                                     repo.saveStorePaymentSettings(settings.copy(
                                         promptpayId = promptPayId.ifBlank { null },
@@ -1769,9 +1805,9 @@ private fun SettingsScreen(
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("แพ็กเกจสมาชิก", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Text(permissions.packageLabel, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
-                    Text("แพ็กเกจปัจจุบัน: " + (subscription?.planTier ?: subscription?.planId ?: "-").uppercase())
-                    Text("สถานะ: " + (subscription?.status ?: "ยังไม่มีข้อมูล"))
-                    Text("เลือก Basic, Standard, Premium หรือซื้อขาด และส่งสลิปได้จากเมนูแพ็กเกจ",
+                    Text("แพ็กเกจปัจจุบัน: " + permissions.effectiveTier.value.uppercase())
+                    Text("สถานะ: " + permissions.statusLabel)
+                    Text("เลือก Free, Basic, Standard, Premium หรือซื้อขาด และส่งสลิปได้จากเมนูแพ็กเกจ",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
@@ -1834,7 +1870,7 @@ private fun SettingsScreen(
                 }
             }
         }
-        item { OutlinedButton(onClick = onSwitch, modifier = Modifier.fillMaxWidth()) { Text("เปลี่ยนร้านค้า") } }
+        item { OutlinedButton(onClick = { switchConfirm = true }, modifier = Modifier.fillMaxWidth()) { Text("เปลี่ยนร้านค้า") } }
         item {
             Button(onClick = onSignOut, modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB42318))) { Text("ออกจากระบบ") }
