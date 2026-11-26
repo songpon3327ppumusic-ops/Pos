@@ -1722,14 +1722,14 @@ private fun SettingsScreen(
                     HorizontalDivider()
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("โอนเข้าบัญชีธนาคาร", Modifier.weight(1f)); Switch(settings.bankTransferEnabled,
-                            { settings = settings.copy(bankTransferEnabled = it) }, enabled = canManageQr)
+                            { settings = settings.copy(bankTransferEnabled = it) }, enabled = canManage)
                     }
                     OutlinedTextField(bankName, { bankName = it }, label = { Text("ธนาคาร") },
-                        enabled = canManageQr, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        enabled = canManage, singleLine = true, modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(bankAccountName, { bankAccountName = it }, label = { Text("ชื่อบัญชี") },
-                        enabled = canManageQr, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        enabled = canManage, singleLine = true, modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(bankAccountNumber, { bankAccountNumber = it }, label = { Text("เลขบัญชี") },
-                        enabled = canManageQr, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        enabled = canManage, singleLine = true, modifier = Modifier.fillMaxWidth())
                     if (permissions.hasFeature(StoreFeature.STORE_PAYMENT_QR)) merchantQrBitmap?.let { Image(it.asImageBitmap(), contentDescription = "QR รับเงินของร้าน",
                         modifier = Modifier.fillMaxWidth().height(190.dp)) }
                     if (canManageQr) {
