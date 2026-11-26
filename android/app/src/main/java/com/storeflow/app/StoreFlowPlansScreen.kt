@@ -227,7 +227,7 @@ fun StoreFlowPlansScreen(
                     Text("เริ่มใช้งานแพ็กเกจ Free", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Text("ฟรีตลอดชีพ • สินค้า 20 รายการ • เจ้าของร้านใช้งานคนเดียว • QR รับเงินและ POS ใช้งานได้")
                     Button(
-                        enabled = !busy && currentTier != "free",
+                        enabled = !busy && currentTier !in setOf("free", "lifetime"),
                         onClick = {
                             scope.launch {
                                 busy = true; error = null; message = null
@@ -241,7 +241,12 @@ fun StoreFlowPlansScreen(
                             }
                         },
                         modifier = Modifier.fillMaxWidth()
-                    ) { Text(if (busy) "กำลังเปลี่ยนแพ็กเกจ..." else if (currentTier == "free") "ใช้งานแพ็กเกจนี้อยู่" else "ใช้แพ็กเกจ Free") }
+                    ) { Text(when {
+                        busy -> "กำลังเปลี่ยนแพ็กเกจ..."
+                        currentTier == "free" -> "ใช้งานแพ็กเกจนี้อยู่"
+                        currentTier == "lifetime" -> "ร้านนี้ใช้สิทธิ์ Lifetime อยู่แล้ว"
+                        else -> "ใช้แพ็กเกจ Free"
+                    }) }
                 }
             }
         }
