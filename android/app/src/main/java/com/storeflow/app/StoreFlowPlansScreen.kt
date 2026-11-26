@@ -44,6 +44,7 @@ private val storeFlowPlans = listOf(
         "จ่ายครั้งเดียว • ใช้งานตลอดชีพ • อัปเดตฟีเจอร์")
 )
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StoreFlowPlansScreen(
     modifier: Modifier,
