@@ -2,9 +2,9 @@ name: StoreFlow build check
 
 on:
   push:
-    branches: ["feature/live-supabase-data"]
+    branches: ["**"]
   pull_request:
-    branches: [main]
+    branches: ["**"]
 
 permissions:
   contents: read

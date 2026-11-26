@@ -1,0 +1,35 @@
+# Node / Next.js
+node_modules/
+.next/
+out/
+dist/
+coverage/
+.turbo/
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Local environment and credentials
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+
+# Android / Gradle / IDE
+.gradle/
+**/build/
+local.properties
+.idea/
+*.iml
+.DS_Store
+
+# Temporary and test output
+*.tmp
+*.swp
