@@ -165,8 +165,8 @@ fun StoreFlowPlansScreen(
                     Text("แพ็กเกจปัจจุบันจากฐานข้อมูล", fontWeight = FontWeight.SemiBold)
                     Text(currentTier.uppercase(), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     Text("สถานะ: $statusLabel")
-                    currentSubscription?.trialEndsAt?.let { Text("ทดลองใช้ถึง: " + formatThaiDateTime(it)) }
-                    currentSubscription?.currentPeriodEnd?.let { Text("รอบบิลสิ้นสุด: " + formatThaiDateTime(it)) }
+                    currentSubscription?.trialEndsAt?.let { Text("ทดลองใช้ถึง: " + formatStoreFlowThaiDateTime(it)) }
+                    currentSubscription?.currentPeriodEnd?.let { Text("รอบบิลสิ้นสุด: " + formatStoreFlowThaiDateTime(it)) }
                 }
             }
         }
@@ -200,9 +200,20 @@ fun StoreFlowPlansScreen(
             }
         }
         if (selectedTier != "lifetime") item {
-            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                SegmentedButton(selected = interval == "month", onClick = { interval = "month" }, shape = SegmentedButtonDefaults.itemShape(0)) { Text("รายเดือน") }
-                SegmentedButton(selected = interval == "year", onClick = { interval = "year" }, shape = SegmentedButtonDefaults.itemShape(1)) { Text("รายปี") }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FilterChip(
+                    selected = interval == "month",
+                    onClick = { interval = "month" },
+                    label = { Text("รายเดือน") }
+                )
+                FilterChip(
+                    selected = interval == "year",
+                    onClick = { interval = "year" },
+                    label = { Text("รายปี") }
+                )
             }
         }
         item {
@@ -266,7 +277,7 @@ fun StoreFlowPlansScreen(
                 Column(Modifier.padding(14.dp)) {
                     Text(request.planTier.uppercase() + " • ฿" + request.amountThb.toInt(), fontWeight = FontWeight.Bold)
                     Text("สถานะ: " + request.status)
-                    Text("วันที่: " + formatThaiDateTime(request.createdAt), style = MaterialTheme.typography.bodySmall)
+                    Text("วันที่: " + formatStoreFlowThaiDateTime(request.createdAt), style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
@@ -341,4 +352,16 @@ fun StoreFlowPlansScreen(
         error?.let { msg -> item { Text(msg, color = MaterialTheme.colorScheme.error) } }
         message?.let { msg -> item { Text(msg, color = MaterialTheme.colorScheme.primary) } }
     }
+}
+
+
+private fun formatStoreFlowThaiDateTime(value: String?): String {
+    if (value.isNullOrBlank()) return "-"
+    return runCatching {
+        val instant = runCatching { java.time.Instant.parse(value) }
+            .getOrElse { java.time.OffsetDateTime.parse(value).toInstant() }
+        java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy HH:mm", java.util.Locale("th", "TH"))
+            .withZone(java.time.ZoneId.of("Asia/Bangkok"))
+            .format(instant)
+    }.getOrDefault(value)
 }
