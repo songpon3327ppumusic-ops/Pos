@@ -214,8 +214,7 @@ fun StoreFlowPlansScreen(
             Card(
                 onClick = {
                     selectedTier = plan.tier
-                    if (plan.tier == "lifetime") interval = "lifetime"
-                    else if (interval == "lifetime") interval = "month"
+                    if (interval == "lifetime") interval = "month"
                     if (plan.tier != "free" && !isCurrent && !permissions.isLifetime) checkoutOpen = true
                 },
                 border = if (isCurrent || plan.tier == "standard") androidx.compose.foundation.BorderStroke(1.5.dp,
@@ -389,7 +388,7 @@ fun StoreFlowPlansScreen(
     if (checkoutOpen && selectedTier != "free") {
         StoreFlowCheckoutSheet(
             planName = selectedPlan.title,
-            billingPeriod = interval,
+            billingPeriod = if (selectedTier == "lifetime") "lifetime" else interval,
             amount = amount,
             settings = platformSettings,
             qrBitmap = platformQr,
@@ -428,7 +427,7 @@ fun StoreFlowPlansScreen(
                         val requestId = UUID.randomUUID().toString()
                         val slipPath = repository.uploadPlanSlip(requestId, slipBytes!!)
                         repository.submitPlanPayment(
-                            organizationId, selectedTier, interval, amount.toDouble(),
+                            organizationId, selectedTier, if (selectedTier == "lifetime") "lifetime" else interval, amount.toDouble(),
                             slipPath, transactionRef.trim()
                         )
                         checkoutOpen = false
