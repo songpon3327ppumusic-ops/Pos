@@ -1,5 +1,6 @@
 package com.storeflow.app
 
+import com.storeflow.app.data.StoreSubscription
 import java.time.Instant
 import java.time.OffsetDateTime
 
