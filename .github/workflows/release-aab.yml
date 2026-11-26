@@ -1,6 +1,7 @@
 name: StoreFlow Release AAB
 # Re-run after Android release signing secret was updated.
 # Signing secret refresh verification run.
+# Retry after confirming both keystore and key passwords.
 
 on:
   workflow_dispatch:
