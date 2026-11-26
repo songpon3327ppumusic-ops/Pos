@@ -459,7 +459,8 @@ private fun Workspace() {
                     onSubscriptionChanged = { scope.launch { refresh() } })
                 else -> when (tab) {
                     0 -> Dashboard(Modifier.padding(padding), active.name, metrics, error, lastUpdated)
-                    1 -> PosScreen(Modifier.padding(padding), active.id, products, repo, role) { scope.launch { refresh() } }
+                    1 -> PosScreen(Modifier.padding(padding), active.id, products, repo, role,
+                        onOpenSettings = { extraScreen = "settings" }) { scope.launch { refresh() } }
                     2 -> ProductsScreen(Modifier.padding(padding), active.id, products, repo,
                         role in listOf("owner", "admin", "manager")) { scope.launch { refresh() } }
                     else -> ReportsScreen(Modifier.padding(padding), metrics, products)
@@ -713,7 +714,8 @@ private fun StockDialog(product: StoreProduct, onDismiss: () -> Unit, onSave: su
 @Composable
 private fun PosScreen(
     modifier: Modifier, orgId: String, products: List<StoreProduct>,
-    repo: StoreFlowRepository, role: String, onCompleted: () -> Unit
+    repo: StoreFlowRepository, role: String,
+    onOpenSettings: () -> Unit = {}, onCompleted: () -> Unit
 ) {
     val cart = remember { mutableStateMapOf<String, Double>() }
     val scope = rememberCoroutineScope()
@@ -745,6 +747,14 @@ private fun PosScreen(
     var promptPayDialog by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var paymentSettings by remember(orgId) { mutableStateOf<StorePaymentSettings?>(null) }
+    var customQrBitmap by remember(orgId) { mutableStateOf<Bitmap?>(null) }
+    LaunchedEffect(paymentSettings?.customQrUrl, paymentSettings?.qrImagePath) {
+        val path = paymentSettings?.customQrUrl ?: paymentSettings?.qrImagePath
+        customQrBitmap = if (path.isNullOrBlank()) null else runCatching {
+            val bytes = withContext(Dispatchers.IO) { repo.downloadStoreQr(path) }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+        }.getOrNull()
+    }
     val selected = products.filter { (cart[it.id] ?: 0.0) > 0 }
     val total = selected.sumOf { it.price * (cart[it.id] ?: 0.0) }
     val filtered = products.filter { p ->
@@ -856,8 +866,10 @@ private fun PosScreen(
             total = total,
             items = selected.map { it to (cart[it.id] ?: 0.0) },
             settings = paymentSettings,
+            customQrBitmap = customQrBitmap,
             repo = repo,
             isOwner = role == "owner",
+            onOpenSettings = onOpenSettings,
             onDismiss = { promptPayDialog = false },
             onPending = {
                 cart.clear()
@@ -934,8 +946,10 @@ private fun PromptPayCheckoutDialog(
     total: Double,
     items: List<Pair<StoreProduct, Double>>,
     settings: StorePaymentSettings?,
+    customQrBitmap: Bitmap?,
     repo: StoreFlowRepository,
     isOwner: Boolean,
+    onOpenSettings: () -> Unit,
     onDismiss: () -> Unit,
     onPending: () -> Unit,
     onPaid: (String) -> Unit
@@ -987,9 +1001,16 @@ private fun PromptPayCheckoutDialog(
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("ยอดที่ต้องโอน", style = MaterialTheme.typography.labelLarge)
                 Text(money(total), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                qrBitmap?.let { Image(it.asImageBitmap(), contentDescription = "PromptPay QR",
-                    modifier = Modifier.fillMaxWidth().height(210.dp)) }
-                Text("ชื่อบัญชี: ${settings?.promptpayName ?: "-"}")
+                when {
+                    customQrBitmap != null -> Image(customQrBitmap.asImageBitmap(), contentDescription = "QR รับเงินของร้าน",
+                        modifier = Modifier.fillMaxWidth().height(210.dp))
+                    qrBitmap != null -> Image(qrBitmap.asImageBitmap(), contentDescription = "PromptPay QR",
+                        modifier = Modifier.fillMaxWidth().height(210.dp))
+                    else -> OutlinedButton(onClick = onOpenSettings, modifier = Modifier.fillMaxWidth()) {
+                        Text("ยังไม่มี QR — ไปตั้งค่าแนบรูป QR ของร้าน")
+                    }
+                }
+                Text("ชื่อบัญชี: ${settings?.bankAccountName ?: settings?.promptpayName ?: "-"}")
                 OutlinedButton(onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, enabled = !busy,
                     modifier = Modifier.fillMaxWidth()) { Text(if (slipBytes == null) "แนบรูปสลิปและอ่าน QR" else "เลือกสลิปใหม่") }
                 if (transactionRef.isNotBlank()) {
@@ -1451,6 +1472,7 @@ private fun SettingsScreen(
     val scope = rememberCoroutineScope()
     val canManage = role == "owner"
     var settings by remember(store.id) { mutableStateOf(StorePaymentSettings(store.id)) }
+    var merchantQrBitmap by remember(store.id) { mutableStateOf<Bitmap?>(null) }
     var subscription by remember { mutableStateOf<StoreSubscription?>(null) }
     var promptPayId by remember { mutableStateOf("") }
     var promptPayName by remember { mutableStateOf("") }
@@ -1524,9 +1546,10 @@ private fun SettingsScreen(
                         ?: error("อ่านรูป QR ไม่สำเร็จ")
                 }
                 val path = repo.uploadStoreQr(store.id, bytes)
-                val updated = settings.copy(qrImagePath = path)
+                val updated = settings.copy(qrImagePath = path, customQrUrl = path)
                 repo.saveStorePaymentSettings(updated)
                 settings = updated
+                merchantQrBitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
                 message = "อัปโหลด QR ของร้านเรียบร้อย"
             } catch (e: Exception) { error = e.message ?: "อัปโหลด QR ไม่สำเร็จ" }
             finally { busy = false }
@@ -1541,6 +1564,13 @@ private fun SettingsScreen(
             bankName = settings.bankName.orEmpty()
             bankAccountName = settings.bankAccountName.orEmpty()
             bankAccountNumber = settings.bankAccountNumber.orEmpty()
+            val qrPath = settings.customQrUrl ?: settings.qrImagePath
+            merchantQrBitmap = qrPath?.let { path ->
+                runCatching {
+                    val bytes = withContext(Dispatchers.IO) { repo.downloadStoreQr(path) }
+                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                }.getOrNull()
+            }
             subscription = repo.subscription(store.id)
         }.onFailure { error = it.message ?: "โหลดการตั้งค่าไม่สำเร็จ" }
     }
@@ -1620,12 +1650,14 @@ private fun SettingsScreen(
                         enabled = canManage, singleLine = true, modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(bankAccountNumber, { bankAccountNumber = it }, label = { Text("เลขบัญชี") },
                         enabled = canManage, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    merchantQrBitmap?.let { Image(it.asImageBitmap(), contentDescription = "QR รับเงินของร้าน",
+                        modifier = Modifier.fillMaxWidth().height(190.dp)) }
                     if (canManage) {
                         OutlinedButton(onClick = { qrPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
                             enabled = !busy, modifier = Modifier.fillMaxWidth()) {
-                            Text(if (settings.qrImagePath == null) "อัปโหลด QR ประจำร้าน" else "เปลี่ยนรูป QR ประจำร้าน")
+                            Text(if (settings.customQrUrl == null && settings.qrImagePath == null) "อัปโหลด QR ประจำร้าน" else "เปลี่ยนรูป QR ประจำร้าน")
                         }
-                        settings.qrImagePath?.let { Text("มีรูป QR ร้านบันทึกไว้", color = MaterialTheme.colorScheme.primary) }
+                        if (merchantQrBitmap != null) Text("QR นี้จะแสดงให้ลูกค้าในหน้าชำระเงิน POS", color = MaterialTheme.colorScheme.primary)
                     }
                     if (canManage) Button(
                         enabled = !busy,
