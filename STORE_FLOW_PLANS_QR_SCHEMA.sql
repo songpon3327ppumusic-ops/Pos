@@ -232,6 +232,26 @@ END; $$;
 REVOKE ALL ON FUNCTION public.storeflow_review_plan_payment(uuid,boolean,text) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.storeflow_review_plan_payment(uuid,boolean,text) TO authenticated;
 
+CREATE OR REPLACE FUNCTION public.storeflow_get_subscription(p_organization_id uuid)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=''
+AS $
+DECLARE v_row public.organization_subscriptions%rowtype;
+BEGIN
+ IF auth.uid() IS NULL OR NOT private.is_org_member(p_organization_id) THEN
+  RAISE EXCEPTION USING errcode='42501',message='Not an active store member'; END IF;
+ UPDATE public.organization_subscriptions SET status='expired',updated_at=now()
+ WHERE organization_id=p_organization_id AND (
+  (status IN ('trial','trialing') AND trial_ends_at IS NOT NULL AND trial_ends_at<=now())
+  OR (status='active' AND plan_type<>'lifetime' AND current_period_end IS NOT NULL AND current_period_end<=now())
+ );
+ SELECT * INTO v_row FROM public.organization_subscriptions WHERE organization_id=p_organization_id;
+ IF NOT FOUND THEN RETURN NULL; END IF;
+ RETURN jsonb_build_object('status',v_row.status,'plan_id',v_row.plan_id,'plan_tier',v_row.plan_tier,
+  'plan_type',v_row.plan_type,'trial_ends_at',v_row.trial_ends_at,'current_period_end',v_row.current_period_end);
+END; $;
+REVOKE ALL ON FUNCTION public.storeflow_get_subscription(uuid) FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION public.storeflow_get_subscription(uuid) TO authenticated;
+
 INSERT INTO public.storeflow_platform_settings(id) VALUES(true) ON CONFLICT(id) DO NOTHING;
 
 INSERT INTO storage.buckets(id,name,public,file_size_limit,allowed_mime_types)
