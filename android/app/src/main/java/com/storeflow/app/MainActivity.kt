@@ -1892,6 +1892,7 @@ private fun SettingsScreen(
     var deleteConfirm by remember { mutableStateOf(false) }
     var deleteConfirmationText by remember { mutableStateOf("") }
     var switchConfirm by remember { mutableStateOf(false) }
+    var settingsSection by rememberSaveable { mutableStateOf("store") }
     val context = LocalContext.current
     val qrPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri: Uri? ->
         if (uri != null) scope.launch {
@@ -1979,6 +1980,23 @@ private fun SettingsScreen(
     LazyColumn(modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { Text("ตั้งค่า", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold) }
         item {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf(
+                    "store" to "ข้อมูลร้านค้า",
+                    "payment" to "รับชำระเงิน & QR",
+                    "backup" to "สำรองข้อมูล",
+                    "privacy" to "บัญชีและความเป็นส่วนตัว"
+                ).forEach { (key, label) ->
+                    NavigationDrawerItem(
+                        label = { Text(label) },
+                        selected = settingsSection == key,
+                        onClick = { settingsSection = key },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+        }
+        if (settingsSection == "store") item {
             Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
                 Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                     Text("ร้านค้าที่ใช้งาน", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1993,7 +2011,7 @@ private fun SettingsScreen(
                 }
             }
         }
-        item {
+        if (settingsSection == "payment") item {
             Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("ตั้งค่าการรับชำระเงิน", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -2061,7 +2079,7 @@ private fun SettingsScreen(
                 }
             }
         }
-        item {
+        if (settingsSection == "store") item {
             Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("แพ็กเกจสมาชิก", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -2073,7 +2091,7 @@ private fun SettingsScreen(
                 }
             }
         }
-        if (canManage && permissions.hasFeature(StoreFeature.STAFF)) item {
+        if (settingsSection == "store" && canManage && permissions.hasFeature(StoreFeature.STAFF)) item {
             Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("รหัสเชิญพนักงาน", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -2089,8 +2107,8 @@ private fun SettingsScreen(
                 }
             }
         }
-        if (canManage) item { BackupCenterScreen(store, repo) }
-        item {
+        if (settingsSection == "backup" && canManage) item { BackupCenterScreen(store, repo) }
+        if (settingsSection == "privacy") item {
             Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("บัญชีและความเป็นส่วนตัว", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -2111,8 +2129,8 @@ private fun SettingsScreen(
                 }
             }
         }
-        item { OutlinedButton(onClick = { switchConfirm = true }, modifier = Modifier.fillMaxWidth()) { Text("เปลี่ยนร้านค้า") } }
-        item {
+        if (settingsSection == "store") item { OutlinedButton(onClick = { switchConfirm = true }, modifier = Modifier.fillMaxWidth()) { Text("เปลี่ยนร้านค้า") } }
+        if (settingsSection == "privacy") item {
             Button(onClick = onSignOut, modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB42318))) { Text("ออกจากระบบ") }
         }
