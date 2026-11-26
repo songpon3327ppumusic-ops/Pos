@@ -107,6 +107,9 @@ CREATE POLICY storeflow_platform_settings_admin_delete
  ON public.storeflow_platform_settings FOR DELETE TO authenticated
  USING(coalesce((select auth.jwt())->'app_metadata'->>'role','')='platform_admin');
 
+CREATE INDEX IF NOT EXISTS storeflow_platform_settings_updated_by_idx
+ ON public.storeflow_platform_settings(updated_by);
+
 CREATE TABLE IF NOT EXISTS public.storeflow_plan_payment_requests (
  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
  organization_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
