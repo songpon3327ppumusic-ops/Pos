@@ -1641,7 +1641,7 @@ private fun SettingsScreen(
                         ?: error("อ่านรูป QR ไม่สำเร็จ")
                 }
                 val path = repo.uploadStoreQr(store.id, bytes)
-                val updated = settings.copy(qrImagePath = path, customQrUrl = path)
+                val updated = settings.copy(qrImagePath = path, customQrUrl = path, promptpayEnabled = true)
                 repo.saveStorePaymentSettings(updated)
                 settings = updated
                 merchantQrBitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
@@ -1812,7 +1812,7 @@ private fun SettingsScreen(
                 }
             }
         }
-        if (canManage) item {
+        if (canManage && permissions.hasFeature(StoreFeature.STAFF)) item {
             Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("รหัสเชิญพนักงาน", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
