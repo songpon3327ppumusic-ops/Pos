@@ -880,6 +880,7 @@ private fun PosScreen(
     var selectedCategory by rememberSaveable { mutableStateOf("ทั้งหมด") }
     val categories = remember(products) { listOf("ทั้งหมด") + products.mapNotNull { it.category?.takeIf(String::isNotBlank) }.distinct().sorted() }
     var paymentDialog by remember { mutableStateOf(false) }
+    var cartExpanded by remember { mutableStateOf(false) }
     var cashDialog by remember { mutableStateOf(false) }
     var promptPayDialog by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
@@ -955,8 +956,10 @@ private fun PosScreen(
             colors = CardDefaults.cardColors(containerColor = Color.White)) {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(selected.sumOf { cart[it.id] ?: 0.0 }.toInt().toString() + " ชิ้น",
-                        Modifier.weight(1f))
+                    TextButton(onClick = { cartExpanded = true }, enabled = selected.isNotEmpty(),
+                        modifier = Modifier.weight(1f)) {
+                        Text(selected.sumOf { cart[it.id] ?: 0.0 }.toInt().toString() + " ชิ้น • ดูตะกร้า")
+                    }
                     Text(money(total), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -973,6 +976,46 @@ private fun PosScreen(
                 }
                 message?.let { Text(it, color = MaterialTheme.colorScheme.primary,
                     style = MaterialTheme.typography.bodySmall) }
+            }
+        }
+    }
+    if (cartExpanded) {
+        ModalBottomSheet(onDismissRequest = { cartExpanded = false }) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("ตะกร้าสินค้า", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                if (selected.isEmpty()) EmptyCard("ตะกร้าว่าง", "เลือกสินค้าเพื่อเริ่มรายการขาย")
+                else selected.forEach { product ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(product.name, fontWeight = FontWeight.SemiBold)
+                            Text("${qty(cart[product.id] ?: 0.0)} × ${money(product.price)}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Text(money(product.price * (cart[product.id] ?: 0.0)), fontWeight = FontWeight.SemiBold)
+                        IconButton(onClick = {
+                            val next = (cart[product.id] ?: 0.0) - 1
+                            if (next <= 0) cart.remove(product.id) else cart[product.id] = next
+                        }) { Icon(Icons.Default.RemoveCircleOutline, "ลดจำนวน") }
+                        IconButton(onClick = {
+                            if (product.stock > (cart[product.id] ?: 0.0)) {
+                                cart[product.id] = (cart[product.id] ?: 0.0) + 1
+                            }
+                        }, enabled = product.stock > (cart[product.id] ?: 0.0)) {
+                            Icon(Icons.Default.AddCircleOutline, "เพิ่มจำนวน")
+                        }
+                    }
+                    HorizontalDivider()
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("ยอดรวม", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                    Text(money(total), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                }
+                Button(onClick = { cartExpanded = false; paymentDialog = true },
+                    enabled = selected.isNotEmpty() && !busy && permissions.canCreateBill,
+                    modifier = Modifier.fillMaxWidth()) { Text("ดำเนินการชำระเงิน") }
+                Spacer(Modifier.height(18.dp))
             }
         }
     }
@@ -1252,6 +1295,7 @@ private fun WorkforceScreen(
     var addingEmployee by remember { mutableStateOf(false) }
     var schedulingFor by remember { mutableStateOf<StoreEmployee?>(null) }
     var salaryFor by remember { mutableStateOf<StoreEmployee?>(null) }
+    var workforceTab by rememberSaveable { mutableStateOf("employees") }
 
     suspend fun refresh() {
         busy = true
@@ -1345,6 +1389,12 @@ private fun WorkforceScreen(
             IconButton(onClick = { scope.launch { refresh() } }, enabled = !busy) {
                 if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                 else Icon(Icons.Default.Refresh, "รีเฟรช")
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            listOf("employees" to "พนักงาน", "shifts" to "กะงาน & ลงเวลา", "payroll" to "เงินเดือน").forEach { (key, label) ->
+                FilterChip(selected = workforceTab == key, onClick = { workforceTab = key },
+                    label = { Text(label) })
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
