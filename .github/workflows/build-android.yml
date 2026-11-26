@@ -47,16 +47,6 @@ jobs:
         with:
           gradle-version: "8.13"
 
-      - name: Generate Gradle Wrapper
-        working-directory: android
-        run: |
-          for attempt in 1 2 3; do
-            gradle wrapper --gradle-version 8.13 --distribution-type bin && exit 0
-            echo "Gradle wrapper generation failed (attempt $attempt/3); retrying after 20 seconds..."
-            sleep 20
-          done
-          exit 1
-
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
@@ -70,7 +60,7 @@ jobs:
           SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
         run: |
           for attempt in 1 2 3; do
-            ./gradlew --no-daemon assembleDebug && exit 0
+            gradle --no-daemon assembleDebug && exit 0
             echo "Android build failed (attempt $attempt/3); retrying after 20 seconds..."
             sleep 20
           done
@@ -111,7 +101,7 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           test -n "$ANDROID_KEYSTORE_PASSWORD" && test -n "$ANDROID_KEY_ALIAS" && test -n "$ANDROID_KEY_PASSWORD"
-          ./gradlew --no-daemon assembleRelease bundleRelease
+          gradle --no-daemon assembleRelease bundleRelease
 
       - name: Upload signed Release APK
         if: ${{ steps.signing.outputs.available == 'true' }}
