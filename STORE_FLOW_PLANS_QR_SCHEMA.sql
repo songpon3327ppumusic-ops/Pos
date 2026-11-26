@@ -70,6 +70,29 @@ CREATE TABLE IF NOT EXISTS public.storeflow_platform_settings (
  updated_at timestamptz NOT NULL DEFAULT now(),
  updated_by uuid REFERENCES auth.users(id)
 );
+
+ALTER TABLE public.storeflow_platform_settings
+  ADD COLUMN IF NOT EXISTS is_enabled boolean NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS instructions text;
+
+UPDATE public.storeflow_platform_settings
+SET instructions = coalesce(
+  instructions,
+  'โอนเงินตามยอดที่แสดง แล้วแนบสลิปพร้อมเลขอ้างอิงเพื่อรอผู้ดูแลตรวจสอบ'
+)
+WHERE id = true;
+
+GRANT SELECT ON public.storeflow_platform_settings TO authenticated;
+GRANT SELECT ON public.subscription_plans TO authenticated;
+
+ALTER TABLE public.subscription_plans ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Authenticated users read active subscription plans"
+  ON public.subscription_plans;
+CREATE POLICY "Authenticated users read active subscription plans"
+  ON public.subscription_plans
+  FOR SELECT TO authenticated
+  USING (is_active = true);
+
 ALTER TABLE public.storeflow_platform_settings ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS storeflow_platform_settings_authenticated_read ON public.storeflow_platform_settings;
 CREATE POLICY storeflow_platform_settings_authenticated_read
