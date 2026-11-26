@@ -6,12 +6,13 @@ import java.time.OffsetDateTime
 
 enum class StoreFeature {
     OVERVIEW, POS, PRODUCTS, BASIC_SALES_REPORTS, STAFF,
-    SHIFTS, ATTENDANCE, STORE_PAYMENT_QR, BUSINESS_DOCUMENTS, PAYROLL_AUTO,
-    TAX_DOCUMENTS, BARCODE_SCANNER, RECEIPT_PRINTER
+    SHIFTS, ATTENDANCE, STORE_PAYMENT_QR, BUSINESS_DOCUMENTS,
+    PAYROLL_AUTO, TAX_DOCUMENTS, WITHHOLDING_DOCUMENTS, ADVANCED_DOCUMENTS,
+    BARCODE_SCANNER, RECEIPT_PRINTER
 }
 
 enum class PlanTier(val value: String) {
-    BASIC("basic"), STANDARD("standard"), PREMIUM("premium"),
+    FREE("free"), BASIC("basic"), STANDARD("standard"), PREMIUM("premium"),
     LIFETIME("lifetime"), UNKNOWN("unknown");
 
     companion object {
@@ -32,7 +33,7 @@ enum class PlanStatus {
     }
 }
 
-/** Client UX checks only. Supabase RLS, RPCs and SQL triggers are authoritative. */
+/** Client-side feature visibility only. Supabase RLS, RPCs and SQL triggers remain authoritative. */
 data class PlanPermissions(
     val planTier: PlanTier,
     val planStatus: PlanStatus,
@@ -44,8 +45,8 @@ data class PlanPermissions(
         const val SUPER_ADMIN_EMAIL = "songponsonma.3340@gmail.com"
 
         fun parseInstant(value: String?): Instant? = value?.let {
-            runCatching { Instant.parse(value) }
-                .recoverCatching { OffsetDateTime.parse(value).toInstant() }
+            runCatching { Instant.parse(it) }
+                .recoverCatching { OffsetDateTime.parse(it).toInstant() }
                 .getOrNull()
         }
 
@@ -76,7 +77,7 @@ data class PlanPermissions(
 
     val isExpired: Boolean
         get() {
-            if (isSuperAdmin || isLifetime) return false
+            if (isSuperAdmin || isLifetime || planStatus == PlanStatus.FREE) return false
             if (planStatus in setOf(
                     PlanStatus.EXPIRED, PlanStatus.PAST_DUE, PlanStatus.CANCELED,
                     PlanStatus.CANCELLED, PlanStatus.UNPAID, PlanStatus.PAUSED,
@@ -85,7 +86,7 @@ data class PlanPermissions(
             ) return true
             if (expiresAt != null && !expiresAt.isAfter(now)) return true
             if (planStatus in setOf(PlanStatus.TRIAL, PlanStatus.TRIALING)) return !isTrialActive
-            return planStatus !in setOf(PlanStatus.ACTIVE, PlanStatus.FREE)
+            return planStatus != PlanStatus.ACTIVE
         }
 
     val effectiveTier: PlanTier
@@ -93,9 +94,10 @@ data class PlanPermissions(
             isSuperAdmin || isLifetime -> PlanTier.LIFETIME
             isTrialActive -> PlanTier.STANDARD
             isExpired -> PlanTier.UNKNOWN
+            planStatus == PlanStatus.FREE || planTier == PlanTier.FREE -> PlanTier.FREE
             planTier == PlanTier.PREMIUM -> PlanTier.PREMIUM
             planTier == PlanTier.STANDARD -> PlanTier.STANDARD
-            planTier == PlanTier.BASIC || planStatus == PlanStatus.FREE -> PlanTier.BASIC
+            planTier == PlanTier.BASIC -> PlanTier.BASIC
             else -> PlanTier.UNKNOWN
         }
 
@@ -106,13 +108,24 @@ data class PlanPermissions(
     val canCreateBill: Boolean
         get() = isSuperAdmin || isLifetime || !isExpired
 
-    val packageLabel: String
+    val statusLabel: String
         get() = when {
-            isSuperAdmin || isLifetime -> "แพ็กเกจ: ซื้อขาดตลอดชีพ (Lifetime)"
-            isTrialActive -> "แพ็กเกจ: ทดลองใช้ Standard (7 วัน)"
-            isExpired -> "แพ็กเกจหมดอายุ"
-            else -> "แพ็กเกจ: " + effectiveTier.name.lowercase()
-                .replaceFirstChar { it.uppercase() }
+            isSuperAdmin || isLifetime -> "ใช้งานอยู่ • Lifetime"
+            isTrialActive -> "ทดลองใช้ Standard"
+            isExpired -> "หมดอายุ / รอชำระ"
+            planStatus == PlanStatus.FREE || effectiveTier == PlanTier.FREE -> "ใช้งานฟรีตลอดชีพ"
+            planStatus == PlanStatus.ACTIVE -> "ใช้งานอยู่"
+            else -> "ยังไม่มีข้อมูลแพ็กเกจ"
+        }
+
+    val packageLabel: String
+        get() = when (effectiveTier) {
+            PlanTier.FREE -> "แพ็กเกจ: Free"
+            PlanTier.BASIC -> "แพ็กเกจ: Basic"
+            PlanTier.STANDARD -> "แพ็กเกจ: Standard"
+            PlanTier.PREMIUM -> "แพ็กเกจ: Premium"
+            PlanTier.LIFETIME -> "แพ็กเกจ: ซื้อขาดตลอดชีพ (Lifetime)"
+            PlanTier.UNKNOWN -> if (isExpired) "แพ็กเกจหมดอายุ" else "ยังไม่มีแพ็กเกจ"
         }
 
     /** Expired subscriptions retain read-only access to existing records. */
@@ -123,28 +136,45 @@ data class PlanPermissions(
         if (isExpired || effectiveTier == PlanTier.UNKNOWN) return false
         return when (feature) {
             StoreFeature.OVERVIEW, StoreFeature.POS, StoreFeature.PRODUCTS,
-            StoreFeature.BASIC_SALES_REPORTS, StoreFeature.STAFF -> true
+            StoreFeature.BASIC_SALES_REPORTS, StoreFeature.STORE_PAYMENT_QR,
+            StoreFeature.BARCODE_SCANNER, StoreFeature.BUSINESS_DOCUMENTS -> true
+            StoreFeature.STAFF -> effectiveTier in setOf(PlanTier.BASIC, PlanTier.STANDARD)
             StoreFeature.SHIFTS, StoreFeature.ATTENDANCE,
-            StoreFeature.STORE_PAYMENT_QR, StoreFeature.BUSINESS_DOCUMENTS -> effectiveTier == PlanTier.STANDARD
-            StoreFeature.PAYROLL_AUTO, StoreFeature.TAX_DOCUMENTS,
-            StoreFeature.BARCODE_SCANNER, StoreFeature.RECEIPT_PRINTER -> false
+            StoreFeature.TAX_DOCUMENTS -> effectiveTier in setOf(PlanTier.STANDARD, PlanTier.PREMIUM, PlanTier.LIFETIME)
+            StoreFeature.PAYROLL_AUTO, StoreFeature.WITHHOLDING_DOCUMENTS,
+            StoreFeature.ADVANCED_DOCUMENTS, StoreFeature.RECEIPT_PRINTER -> false
+        }
+    }
+
+    fun canCreateDocument(type: String): Boolean {
+        if (isSuperAdmin || isLifetime || effectiveTier == PlanTier.PREMIUM) return true
+        if (isExpired || effectiveTier == PlanTier.UNKNOWN) return false
+        return when (effectiveTier) {
+            PlanTier.FREE -> type == "receipt"
+            PlanTier.BASIC -> type in setOf("receipt", "quotation", "delivery_note")
+            PlanTier.STANDARD -> type in setOf(
+                "receipt", "quotation", "delivery_note", "abbreviated_tax_invoice",
+                "tax_invoice", "invoice", "billing_note", "goods_receipt"
+            )
+            else -> false
         }
     }
 
     fun productLimit(): Int? = when (effectiveTier) {
+        PlanTier.FREE -> 20
         PlanTier.BASIC -> 50
         PlanTier.STANDARD, PlanTier.PREMIUM, PlanTier.LIFETIME -> null
         PlanTier.UNKNOWN -> 0
     }
 
     fun employeeLimit(): Int? = when (effectiveTier) {
+        PlanTier.FREE -> 0
         PlanTier.BASIC -> 1
         PlanTier.STANDARD -> 5
         PlanTier.PREMIUM, PlanTier.LIFETIME -> null
         PlanTier.UNKNOWN -> 0
     }
 }
-
 
 @androidx.compose.runtime.Composable
 fun StoreFlowUpgradeDialog(
@@ -155,10 +185,10 @@ fun StoreFlowUpgradeDialog(
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
         title = { androidx.compose.material3.Text("อัปเกรดแพ็กเกจ StoreFlow") },
-        text = { androidx.compose.material3.Text("$message\n\nเลือก Basic / Standard / Premium / ซื้อขาด เพื่อเปิดใช้งาน") },
+        text = { androidx.compose.material3.Text("$message\n\nเลือก Free / Basic / Standard / Premium / ซื้อขาด เพื่อเปิดใช้งาน") },
         confirmButton = {
             androidx.compose.material3.TextButton(onClick = onUpgrade) {
-                androidx.compose.material3.Text("อัปเกรดแพ็กเกจ")
+                androidx.compose.material3.Text("ดูแพ็กเกจ")
             }
         },
         dismissButton = {
