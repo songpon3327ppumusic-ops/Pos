@@ -246,6 +246,21 @@ private fun DocumentForm(
                 listOf("exclude" to "แยก VAT 7%", "include" to "รวม VAT 7%", "non_vat" to "ไม่มี VAT").forEach { (v,l) ->
                     Row(verticalAlignment = Alignment.CenterVertically) { RadioButton(mode == v, onClick = { mode = v }); Text(l) }
                 }
+                val previewSubtotal = (qty.toDoubleOrNull() ?: 0.0) * (price.toDoubleOrNull() ?: 0.0)
+                val previewTax = when (mode) {
+                    "exclude" -> previewSubtotal * 0.07
+                    "include" -> previewSubtotal - (previewSubtotal / 1.07)
+                    else -> 0.0
+                }
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                    Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text("ตัวอย่างยอดก่อนบันทึก", fontWeight = FontWeight.SemiBold)
+                        Text("มูลค่ารายการ: " + documentCurrency.format(previewSubtotal))
+                        Text("VAT 7%: " + documentCurrency.format(previewTax))
+                        Text("ยอดสุทธิ: " + documentCurrency.format(if (mode == "include") previewSubtotal else previewSubtotal + previewTax),
+                            fontWeight = FontWeight.Bold)
+                    }
+                }
                 OutlinedTextField(due, { due = it }, label = { Text("วันครบกำหนด YYYY-MM-DD (ถ้ามี)") }, modifier = Modifier.fillMaxWidth())
                 if (type == "withholding_certificate") {
                     OutlinedTextField(income, { income = it }, label = { Text("ประเภทเงินได้") }, modifier = Modifier.fillMaxWidth())
