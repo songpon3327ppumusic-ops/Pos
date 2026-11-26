@@ -516,11 +516,10 @@ class StoreFlowRepository(private val client: SupabaseClient) {
         client.functions.invoke("storeflow-delete-account", body = body)
     }
 
-    suspend fun subscription(organizationId: String): StoreSubscription? =
-        client.from("organization_subscriptions").select {
-            filter { eq("organization_id", organizationId) }
-            limit(1)
-        }.decodeList<StoreSubscription>().firstOrNull()
+    suspend fun subscription(organizationId: String): StoreSubscription? {
+        val params = buildJsonObject { put("p_organization_id", organizationId) }
+        return client.postgrest.rpc("storeflow_get_subscription", params).decodeAs<StoreSubscription>()
+    }
 
     suspend fun ownerInviteCode(): String =
         client.postgrest.rpc("get_store_invite_code").decodeAs<String>()
