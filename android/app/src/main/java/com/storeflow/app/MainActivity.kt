@@ -515,7 +515,7 @@ private fun Workspace() {
                     2 -> ProductsScreen(Modifier.padding(padding), active.id, products, repo,
                         role in listOf("owner", "admin", "manager"), permissions,
                         onUpgrade = { extraScreen = "plans" }) { scope.launch { refresh() } }
-                    else -> ReportsScreen(Modifier.padding(padding), metrics, products)
+                    else -> ReportsScreen(Modifier.padding(padding), active.id, repo, products)
                 }
             }
         }
@@ -1737,13 +1737,135 @@ private fun ScheduleShiftDialog(
 }
 
 @Composable
-private fun ReportsScreen(modifier: Modifier, metrics: StoreMetrics, products: List<StoreProduct>) {
+private fun ReportsScreen(
+    modifier: Modifier,
+    organizationId: String,
+    repo: StoreFlowRepository,
+    products: List<StoreProduct>
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var period by rememberSaveable { mutableStateOf("today") }
+    var sales by remember { mutableStateOf(emptyList<StoreSaleSummary>()) }
+    var loading by remember { mutableStateOf(true) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val today = remember { LocalDate.now(ZoneId.of("Asia/Bangkok")) }
+    val fromDate = when (period) {
+        "7days" -> today.minusDays(6)
+        "month" -> today.withDayOfMonth(1)
+        else -> today
+    }
+    val fromInclusive = remember(period) {
+        fromDate.atStartOfDay(ZoneId.of("Asia/Bangkok")).toInstant().toString()
+    }
+    val total = sales.sumOf { it.total }
+    val cashTotal = sales.filter { it.paymentMethod.equals("cash", true) }.sumOf { it.total }
+    val qrTotal = sales.filter {
+        val method = it.paymentMethod.orEmpty().lowercase()
+        method.contains("qr") || method.contains("promptpay") || method.contains("transfer")
+    }.sumOf { it.total }
+    val csvLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
+        if (uri != null) runCatching {
+            val csv = buildString {
+                appendLine("metric,value")
+                appendLine("period,$period")
+                appendLine("from_date,$fromDate")
+                appendLine("total_sales,$total")
+                appendLine("cash,$cashTotal")
+                appendLine("qr_transfer,$qrTotal")
+                appendLine("orders,${sales.size}")
+                appendLine("products,${products.size}")
+                appendLine("low_stock,${products.count { it.stock <= it.minStock }}")
+            }
+            context.contentResolver.openOutputStream(uri)?.bufferedWriter(Charsets.UTF_8)?.use { it.write(csv) }
+                ?: error("บันทึก CSV ไม่สำเร็จ")
+        }.onFailure { error = it.message ?: "ส่งออก CSV ไม่สำเร็จ" }
+    }
+    val pdfLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
+        if (uri != null) runCatching {
+            val pdf = PdfDocument()
+            val page = pdf.startPage(PdfDocument.PageInfo.Builder(595, 842, 1).create())
+            val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { textSize = 16f }
+            val rows = listOf(
+                "StoreFlow • รายงานการขาย",
+                "ช่วงเวลา: ${when (period) { "7days" -> "7 วันล่าสุด"; "month" -> "เดือนนี้"; else -> "วันนี้" }}",
+                "ตั้งแต่: $fromDate",
+                "ยอดขายรวม: ${money(total)}",
+                "รับเงินสด: ${money(cashTotal)}",
+                "QR / โอนเงิน: ${money(qrTotal)}",
+                "จำนวนบิล: ${sales.size}",
+                "สินค้าในระบบ: ${products.size}",
+                "สินค้าใกล้หมด: ${products.count { it.stock <= it.minStock }}"
+            )
+            var y = 70f
+            rows.forEachIndexed { index, line ->
+                paint.textSize = if (index == 0) 22f else 15f
+                paint.isFakeBoldText = index == 0
+                page.canvas.drawText(line, 42f, y, paint)
+                y += 38f
+            }
+            pdf.finishPage(page)
+            context.contentResolver.openOutputStream(uri)?.use { pdf.writeTo(it) }
+                ?: error("บันทึก PDF ไม่สำเร็จ")
+            pdf.close()
+        }.onFailure { error = it.message ?: "ส่งออก PDF ไม่สำเร็จ" }
+    }
+    LaunchedEffect(organizationId, fromInclusive) {
+        loading = true
+        try {
+            sales = withContext(Dispatchers.IO) { repo.reportSales(organizationId, fromInclusive) }
+            error = null
+        } catch (e: Exception) { error = e.message ?: "โหลดรายงานไม่สำเร็จ" }
+        finally { loading = false }
+    }
     LazyColumn(modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item { Text("รายงาน", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold) }
-        item { Metric("ยอดขายวันนี้", money(metrics.todaySales), Modifier.fillMaxWidth()) }
-        item { Metric("บิลวันนี้", metrics.todayOrders.toString(), Modifier.fillMaxWidth()) }
+        item { Text("รายงานการขาย", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold) }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                listOf("today" to "วันนี้", "7days" to "7 วันล่าสุด", "month" to "เดือนนี้").forEach { (key, label) ->
+                    FilterChip(selected = period == key, onClick = { period = key }, label = { Text(label) })
+                }
+            }
+        }
+        if (loading) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
+        item { Metric("ยอดขายรวม", money(total), Modifier.fillMaxWidth()) }
+        item { Metric("จำนวนบิล", sales.size.toString(), Modifier.fillMaxWidth()) }
+        item {
+            Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(18.dp)) {
+                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("สรุปยอดรับแยกตามช่องทาง", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Payments, null, tint = Green)
+                        Spacer(Modifier.width(8.dp))
+                        Text("เงินสด", Modifier.weight(1f))
+                        Text(money(cashTotal), fontWeight = FontWeight.Bold)
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.QrCode2, null, tint = Green)
+                        Spacer(Modifier.width(8.dp))
+                        Text("QR / โอนเงิน", Modifier.weight(1f))
+                        Text(money(qrTotal), fontWeight = FontWeight.Bold)
+                    }
+                    Text("ยอดช่องทางอื่นหรือรายการที่ไม่มีข้อมูลวิธีชำระ อาจไม่รวมในสองหมวดนี้",
+                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { csvLauncher.launch("StoreFlow-report.csv") },
+                    enabled = !loading && sales.isNotEmpty(), modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Default.TableView, null); Spacer(Modifier.width(5.dp)); Text("ส่งออก CSV")
+                }
+                Button(onClick = { pdfLauncher.launch("StoreFlow-report.pdf") },
+                    enabled = !loading && sales.isNotEmpty(), modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Default.PictureAsPdf, null); Spacer(Modifier.width(5.dp)); Text("ส่งออก PDF")
+                }
+            }
+        }
         item { Metric("สินค้าในระบบ", products.size.toString(), Modifier.fillMaxWidth()) }
-        item { Metric("สินค้าใกล้หมด", metrics.lowStockCount.toString(), Modifier.fillMaxWidth()) }
+        item { Metric("สินค้าใกล้หมด", products.count { it.stock <= it.minStock }.toString(), Modifier.fillMaxWidth()) }
+        error?.let { msg -> item { Text(msg, color = MaterialTheme.colorScheme.error) } }
     }
 }
 
