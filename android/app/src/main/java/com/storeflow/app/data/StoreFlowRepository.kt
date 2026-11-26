@@ -193,7 +193,19 @@ data class StoreFlowPlatformSettings(
     @SerialName("account_number") val accountNumber: String? = null,
     @SerialName("bank_name") val bankName: String? = null,
     @SerialName("promptpay_name") val promptpayName: String? = null,
-    @SerialName("promptpay_id") val promptpayId: String? = null
+    @SerialName("promptpay_id") val promptpayId: String? = null,
+    @SerialName("is_enabled") val isEnabled: Boolean = false,
+    val instructions: String? = null
+)
+
+@Serializable
+data class StoreFlowSubscriptionPlan(
+    val id: String,
+    val name: String,
+    @SerialName("monthly_price_thb") val monthlyPriceThb: Double,
+    @SerialName("yearly_price_thb") val yearlyPriceThb: Double,
+    @SerialName("is_active") val isActive: Boolean = true,
+    @SerialName("sort_order") val sortOrder: Int = 0
 )
 
 @Serializable
@@ -571,6 +583,13 @@ class StoreFlowRepository(private val client: SupabaseClient) {
         val body = buildJsonObject { put("confirm", "DELETE MY ACCOUNT") }
         client.functions.invoke("storeflow-delete-account", body = body)
     }
+
+    suspend fun subscriptionPlans(): List<StoreFlowSubscriptionPlan> =
+        client.from("subscription_plans").select {
+            filter { eq("is_active", true) }
+            order("sort_order", Order.ASCENDING)
+            limit(50)
+        }.decodeList()
 
     suspend fun selectFreePlan(organizationId: String) {
         val params = buildJsonObject { put("p_organization_id", organizationId) }
