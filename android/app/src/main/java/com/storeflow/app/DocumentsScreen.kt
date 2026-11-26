@@ -180,7 +180,7 @@ private fun DocumentForm(
     onDismiss: () -> Unit,
     onSave: (String,String,String,String,String?,String,Double,Double,String,String,String,Double) -> Unit
 ) {
-    var type by remember { mutableStateOf(if (allowTaxDocuments) "tax_invoice" else "invoice") }
+    var type by remember { mutableStateOf("receipt") }
     var party by remember { mutableStateOf("") }; var taxId by remember { mutableStateOf("") }
     var address by remember { mutableStateOf("") }; var due by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }; var qty by remember { mutableStateOf("1") }
