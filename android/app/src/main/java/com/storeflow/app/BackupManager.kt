@@ -17,7 +17,7 @@ import java.io.File
  */
 object BackupManager {
     private const val APP_NAME = "StoreFlow"
-    private const val SCHEMA_VERSION = 1
+    private const val SCHEMA_VERSION = 2
     private val parser = Json { ignoreUnknownKeys = false; isLenient = false }
 
     fun validate(jsonText: String, expectedStoreId: String): JsonObject {
