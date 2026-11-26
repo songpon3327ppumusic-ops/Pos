@@ -114,7 +114,7 @@ data class PlanPermissions(
             isTrialActive -> "ทดลองใช้ Standard"
             isExpired -> "หมดอายุ / รอชำระ"
             effectiveTier == PlanTier.FREE -> "ใช้งานฟรีตลอดชีพ"
-            planStatus == PlanStatus.ACTIVE -> "ใช้งานอยู่"
+            planStatus in setOf(PlanStatus.ACTIVE, PlanStatus.FREE) -> "ใช้งานอยู่"
             else -> "ยังไม่มีข้อมูลแพ็กเกจ"
         }
 
