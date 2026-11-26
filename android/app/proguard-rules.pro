@@ -22,3 +22,6 @@
 -keep @androidx.room.Entity class * { *; }
 -keep @androidx.room.Dao class * { *; }
 -dontwarn javax.annotation.**
+# java.lang.management is part of the desktop JVM, not Android. Ktor references
+# these classes only in its optional IntelliJ debugger-detection helper.
+-dontwarn java.lang.management.**
