@@ -115,6 +115,9 @@ data class PlanPermissions(
                 .replaceFirstChar { it.uppercase() }
         }
 
+    /** Expired subscriptions retain read-only access to existing records. */
+    fun canReadFeature(feature: StoreFeature): Boolean = isExpired || hasFeature(feature)
+
     fun hasFeature(feature: StoreFeature): Boolean {
         if (isSuperAdmin || isLifetime || effectiveTier == PlanTier.PREMIUM) return true
         if (isExpired || effectiveTier == PlanTier.UNKNOWN) return false
