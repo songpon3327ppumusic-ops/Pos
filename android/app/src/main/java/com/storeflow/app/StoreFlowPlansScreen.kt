@@ -46,6 +46,7 @@ private val storeFlowPlans = listOf(
         "จ่ายครั้งเดียว ฿2,590 (ราคาปกติ ฿3,990) • ปลดล็อกทุกฟีเจอร์ตลอดชีพ")
 )
 
+// Subscription plans stay focused; payment collection is rendered in StoreFlowCheckoutSheet.
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StoreFlowPlansScreen(
