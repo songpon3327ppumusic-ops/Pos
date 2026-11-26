@@ -846,6 +846,7 @@ private fun StockDialog(product: StoreProduct, onDismiss: () -> Unit, onSave: su
         dismissButton = { TextButton(onClick = onDismiss) { Text("ยกเลิก") } })
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun PosScreen(
     modifier: Modifier, orgId: String, products: List<StoreProduct>,
