@@ -44,9 +44,9 @@ data class PlanPermissions(
     companion object {
         const val SUPER_ADMIN_EMAIL = "songponsonma.3340@gmail.com"
 
-        fun parseInstant(value: String?): Instant? = value?.let {
-            runCatching { Instant.parse(it) }
-                .recoverCatching { OffsetDateTime.parse(it).toInstant() }
+        fun parseInstant(value: String?): Instant? = value?.let { timestamp ->
+            runCatching { Instant.parse(timestamp) }
+                .recoverCatching { OffsetDateTime.parse(timestamp).toInstant() }
                 .getOrNull()
         }
 
