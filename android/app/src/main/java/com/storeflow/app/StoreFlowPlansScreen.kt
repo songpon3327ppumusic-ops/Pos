@@ -64,6 +64,7 @@ fun StoreFlowPlansScreen(
     var transactionRef by remember { mutableStateOf("") }
     var requests by remember { mutableStateOf(emptyList<com.storeflow.app.data.StoreFlowPlanPaymentRequest>()) }
     var adminRequests by remember { mutableStateOf(emptyList<com.storeflow.app.data.StoreFlowPlanPaymentRequest>()) }
+    var adminSlipImages by remember { mutableStateOf<Map<String, Bitmap>>(emptyMap()) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
@@ -82,6 +83,13 @@ fun StoreFlowPlansScreen(
         requests = repository.planPaymentRequests(organizationId)
         platformAdmin = repository.isPlatformAdmin()
         adminRequests = if (platformAdmin) repository.allPendingPlanPaymentRequests() else emptyList()
+        adminSlipImages = if (platformAdmin) adminRequests.mapNotNull { request ->
+            val path = request.slipPath ?: return@mapNotNull null
+            runCatching {
+                val bytes = repository.downloadPlatformFile(path)
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.let { request.id to it }
+            }.getOrNull()
+        }.filterNotNull().toMap() else emptyMap()
         adminAccountName = platformSettings?.accountName.orEmpty()
         adminAccountNumber = platformSettings?.accountNumber.orEmpty()
         adminBankName = platformSettings?.bankName.orEmpty()
@@ -273,7 +281,10 @@ fun StoreFlowPlansScreen(
                             fontWeight = FontWeight.SemiBold)
                         Text("ร้าน: " + request.organizationId.take(8) + "…")
                         Text("เลขอ้างอิง: " + (request.transactionRef ?: "-"))
-                        Text("ไฟล์สลิป: " + (request.slipPath ?: "-"), style = MaterialTheme.typography.bodySmall)
+                        adminSlipImages[request.id]?.let { slip ->
+                            Image(slip.asImageBitmap(), contentDescription = "สลิปชำระแพ็กเกจ",
+                                modifier = Modifier.fillMaxWidth().height(180.dp))
+                        }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Button(enabled = !busy, onClick = {
                                 scope.launch {
