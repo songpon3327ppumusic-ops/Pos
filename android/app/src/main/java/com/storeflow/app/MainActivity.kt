@@ -1139,8 +1139,8 @@ private fun WorkforceScreen(
             val data = withContext(Dispatchers.IO) {
                 Triple(
                     repo.employees(organizationId),
-                    repo.shifts(organizationId, today),
-                    repo.attendanceToday(organizationId, today)
+                    if (permissions.hasFeature(StoreFeature.SHIFTS)) repo.shifts(organizationId, today) else emptyList(),
+                    if (permissions.hasFeature(StoreFeature.ATTENDANCE)) repo.attendanceToday(organizationId, today) else emptyList()
                 )
             }
             employees = data.first
@@ -1161,6 +1161,18 @@ private fun WorkforceScreen(
         return
     }
     if (!canManage) {
+        if (!permissions.hasFeature(StoreFeature.ATTENDANCE)) {
+            Column(modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("การลงเวลาเข้างาน", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text("ฟีเจอร์นี้เปิดใช้งานตั้งแต่แพ็กเกจ Standard", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Button(onClick = { showUpgradeDialog = true }) { Text("อัปเกรดแพ็กเกจ") }
+            }
+            if (showUpgradeDialog) StoreFlowUpgradeDialog(
+                onDismiss = { showUpgradeDialog = false }, onUpgrade = onUpgrade
+            )
+            return
+        }
         SelfAttendanceScreen(
             modifier = modifier,
             employee = employees.firstOrNull(),
@@ -1713,7 +1725,7 @@ private fun SettingsScreen(
                         enabled = canManageQr, singleLine = true, modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(bankAccountNumber, { bankAccountNumber = it }, label = { Text("เลขบัญชี") },
                         enabled = canManageQr, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    merchantQrBitmap?.let { Image(it.asImageBitmap(), contentDescription = "QR รับเงินของร้าน",
+                    if (permissions.hasFeature(StoreFeature.STORE_PAYMENT_QR)) merchantQrBitmap?.let { Image(it.asImageBitmap(), contentDescription = "QR รับเงินของร้าน",
                         modifier = Modifier.fillMaxWidth().height(190.dp)) }
                     if (canManageQr) {
                         OutlinedButton(onClick = { qrPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
@@ -1751,6 +1763,7 @@ private fun SettingsScreen(
             Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("แพ็กเกจสมาชิก", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(permissions.packageLabel, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
                     Text("แพ็กเกจปัจจุบัน: " + (subscription?.planTier ?: subscription?.planId ?: "-").uppercase())
                     Text("สถานะ: " + (subscription?.status ?: "ยังไม่มีข้อมูล"))
                     Text("เลือก Basic, Standard, Premium หรือซื้อขาด และส่งสลิปได้จากเมนูแพ็กเกจ",
