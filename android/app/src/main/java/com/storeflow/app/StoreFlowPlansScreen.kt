@@ -65,6 +65,12 @@ fun StoreFlowPlansScreen(
         mutableStateOf(permissions.effectiveTier.value.takeIf { it != "unknown" } ?: "free")
     }
     var interval by remember { mutableStateOf("month") }
+    var checkoutOpen by remember { mutableStateOf(false) }
+    var slipPreview by remember { mutableStateOf<Bitmap?>(null) }
+    var livePlans by remember { mutableStateOf<List<com.storeflow.app.data.StoreFlowSubscriptionPlan>>(emptyList()) }
+    var adminPromptPayId by remember { mutableStateOf("") }
+    var adminInstructions by remember { mutableStateOf("") }
+    var billingEnabled by remember { mutableStateOf(false) }
     var slipBytes by remember { mutableStateOf<ByteArray?>(null) }
     var transactionRef by remember { mutableStateOf("") }
     var requests by remember { mutableStateOf(emptyList<com.storeflow.app.data.StoreFlowPlanPaymentRequest>()) }
@@ -78,6 +84,7 @@ fun StoreFlowPlansScreen(
     var adminBankName by remember { mutableStateOf("") }
 
     suspend fun reload() {
+        livePlans = repository.subscriptionPlans()
         platformSettings = repository.platformSettings()
         platformSettings?.customQrUrl?.let { path ->
             platformQr = runCatching {
@@ -98,6 +105,9 @@ fun StoreFlowPlansScreen(
         adminAccountName = platformSettings?.accountName.orEmpty()
         adminAccountNumber = platformSettings?.accountNumber.orEmpty()
         adminBankName = platformSettings?.bankName.orEmpty()
+        adminPromptPayId = platformSettings?.promptpayId.orEmpty()
+        adminInstructions = platformSettings?.instructions.orEmpty()
+        billingEnabled = platformSettings?.isEnabled == true
     }
 
     LaunchedEffect(organizationId) {
@@ -114,6 +124,7 @@ fun StoreFlowPlansScreen(
                 }
                 require(bytes.size <= 6 * 1024 * 1024) { "รูปภาพต้องมีขนาดไม่เกิน 6 MB" }
                 slipBytes = bytes
+                slipPreview = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
                 message = "แนบสลิปแล้ว กรุณากรอกรหัสอ้างอิงจากสลิป"
             } catch (e: Exception) { error = e.message ?: "แนบสลิปไม่สำเร็จ" }
             finally { busy = false }
@@ -133,7 +144,10 @@ fun StoreFlowPlansScreen(
                     customQrUrl = path,
                     accountName = adminAccountName,
                     accountNumber = adminAccountNumber,
-                    bankName = adminBankName
+                    bankName = adminBankName,
+                    promptpayId = adminPromptPayId,
+                    isEnabled = billingEnabled,
+                    instructions = adminInstructions
                 )
                 repository.savePlatformSettings(updated)
                 reload()
@@ -144,10 +158,13 @@ fun StoreFlowPlansScreen(
     }
 
     val selectedPlan = storeFlowPlans.firstOrNull { it.tier == selectedTier } ?: storeFlowPlans.first()
+    val remotePlan = livePlans.firstOrNull { it.id == selectedTier && it.isActive }
     val amount = when (selectedTier) {
         "free" -> 0
         "lifetime" -> 2590
-        else -> if (interval == "year") selectedPlan.yearly else selectedPlan.monthly
+        else -> remotePlan?.let {
+            (if (interval == "year") it.yearlyPriceThb else it.monthlyPriceThb).toInt()
+        } ?: if (interval == "year") selectedPlan.yearly else selectedPlan.monthly
     }
     val currentTier = permissions.effectiveTier.value
     val statusLabel = permissions.statusLabel
@@ -173,22 +190,42 @@ fun StoreFlowPlansScreen(
                 }
             }
         }
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = interval == "month", onClick = { interval = "month" }, label = { Text("รายเดือน") })
+                    FilterChip(selected = interval == "year", onClick = { interval = "year" }, label = { Text("รายปี") })
+                }
+                if (interval == "year") Text("ประหยัดเมื่อเลือกรายปี", color = Color(0xFF15803D),
+                    style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
+            }
+        }
         items(storeFlowPlans.size) { index ->
             val plan = storeFlowPlans[index]
-            val selected = selectedTier == plan.tier
+            val isCurrent = currentTier == plan.tier || (permissions.isLifetime && plan.tier == "lifetime")
             Card(
                 onClick = {
                     selectedTier = plan.tier
                     if (plan.tier == "lifetime") interval = "lifetime"
                     else if (interval == "lifetime") interval = "month"
+                    if (plan.tier != "free" && !isCurrent && !permissions.isLifetime) checkoutOpen = true
                 },
-                border = if (selected) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
-                colors = CardDefaults.cardColors(containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface)
+                border = if (isCurrent || plan.tier == "standard") androidx.compose.foundation.BorderStroke(1.5.dp,
+                    if (isCurrent) Color(0xFF059669) else MaterialTheme.colorScheme.primary) else null,
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
             ) {
                 Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(plan.title, modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                        if (selected) Icon(Icons.Default.CheckCircle, "เลือกแล้ว", tint = MaterialTheme.colorScheme.primary)
+                        when {
+                            isCurrent -> Text("แพ็กเกจปัจจุบัน", color = Color(0xFF15803D), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                            plan.tier == "standard" -> Text("แนะนำ", color = Color(0xFFB45309), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                            plan.tier == "lifetime" -> Text("ซื้อขาด", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelSmall)
+                        }
                     }
                     if (plan.tier == "free") {
                         Text("฿0 • ตลอดชีพ", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
@@ -196,29 +233,47 @@ fun StoreFlowPlansScreen(
                         Text("฿2,590 จ่ายครั้งเดียว", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                         Text("ราคาปกติ ฿3,990 • ประหยัด ฿1,400")
                     } else {
-                        Text("฿${plan.monthly} / เดือน  •  ฿${plan.yearly} / ปี",
+                        Text("฿" + amountForPlan(plan, livePlans, interval) + " / " +
+                            if (interval == "year") "ปี" else "เดือน",
                             style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        if (interval == "year") Text("ประหยัดเมื่อชำระรายปี", color = Color(0xFF15803D),
+                            style = MaterialTheme.typography.labelSmall)
                     }
                     Text("${plan.products} • ${plan.users}")
-                    Text(plan.features, style = MaterialTheme.typography.bodySmall)
+                    plan.features.split(" • ").filter { it.isNotBlank() }.forEach { feature ->
+                        Row(verticalAlignment = Alignment.Top) {
+                            Icon(Icons.Default.CheckCircle, null, tint = Color(0xFF16A34A), modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(7.dp))
+                            Text(feature, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                    Button(
+                        onClick = {
+                            selectedTier = plan.tier
+                            if (plan.tier == "free") {
+                                scope.launch {
+                                    busy = true
+                                    try {
+                                        repository.selectFreePlan(organizationId)
+                                        message = "เปลี่ยนเป็นแพ็กเกจ Free เรียบร้อย"
+                                        onSubscriptionChanged()
+                                        reload()
+                                    } catch (e: Exception) { error = e.message ?: "เปลี่ยนแพ็กเกจ Free ไม่สำเร็จ" }
+                                    finally { busy = false }
+                                }
+                            } else if (!isCurrent && !permissions.isLifetime) checkoutOpen = true
+                        },
+                        enabled = !busy && !isCurrent && !permissions.isLifetime,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(when {
+                            isCurrent -> "กำลังใช้งานอยู่"
+                            permissions.isLifetime -> "ได้รับสิทธิ์ Lifetime แล้ว"
+                            plan.tier == "free" -> "ใช้แพ็กเกจ Free"
+                            else -> "เลือก / อัปเกรดแพ็กเกจ"
+                        })
+                    }
                 }
-            }
-        }
-        if (selectedTier !in setOf("lifetime", "free")) item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                FilterChip(
-                    selected = interval == "month",
-                    onClick = { interval = "month" },
-                    label = { Text("รายเดือน") }
-                )
-                FilterChip(
-                    selected = interval == "year",
-                    onClick = { interval = "year" },
-                    label = { Text("รายปี") }
-                )
             }
         }
         if (selectedTier == "free") item {
@@ -247,58 +302,6 @@ fun StoreFlowPlansScreen(
                         currentTier == "lifetime" -> "ร้านนี้ใช้สิทธิ์ Lifetime อยู่แล้ว"
                         else -> "ใช้แพ็กเกจ Free"
                     }) }
-                }
-            }
-        }
-        if (selectedTier != "free") item {
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("ชำระค่าแพ็กเกจ StoreFlow", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text("ยอดชำระ: ฿${amount}", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                    if (platformQr != null) {
-                        Image(platformQr!!.asImageBitmap(), contentDescription = "QR รับชำระค่าแพ็กเกจ StoreFlow",
-                            modifier = Modifier.fillMaxWidth().height(220.dp))
-                    } else {
-                        Text("ยังไม่มี QR รับเงินค่าแพ็กเกจ กรุณาติดต่อผู้ดูแล StoreFlow")
-                    }
-                    platformSettings?.let { settings ->
-                        Text("ชื่อบัญชี: ${settings.accountName ?: settings.promptpayName ?: "-"}")
-                        Text("ธนาคาร: ${settings.bankName ?: "-"}")
-                        Text("เลขบัญชี / พร้อมเพย์: ${settings.accountNumber ?: settings.promptpayId ?: "-"}")
-                    }
-                    OutlinedButton(onClick = { imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
-                        enabled = !busy, modifier = Modifier.fillMaxWidth()) {
-                        Icon(Icons.Default.CloudUpload, null); Spacer(Modifier.width(6.dp))
-                        Text(if (slipBytes == null) "แนบรูปสลิปโอนเงิน" else "เปลี่ยนรูปสลิป")
-                    }
-                    OutlinedTextField(transactionRef, { transactionRef = it }, label = { Text("เลขอ้างอิงธุรกรรมจากสลิป") },
-                        singleLine = true, modifier = Modifier.fillMaxWidth())
-                    Text("ระบบตรวจป้องกันเลขอ้างอิงซ้ำ และส่งให้ผู้ดูแล StoreFlow อนุมัติ ไม่เปิดสิทธิ์จากรูปสลิปโดยอัตโนมัติ",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Button(
-                        onClick = {
-                            scope.launch {
-                                busy = true; error = null; message = null
-                                try {
-                                    require(platformQr != null) { "ผู้ดูแลยังไม่ได้ตั้งค่า QR รับเงินค่าแพ็กเกจ" }
-                                    require(slipBytes != null) { "กรุณาแนบรูปสลิปก่อนส่งคำขอ" }
-                                    require(transactionRef.trim().length >= 6) { "กรุณากรอกเลขอ้างอิงธุรกรรมให้ถูกต้อง" }
-                                    val requestId = UUID.randomUUID().toString()
-                                    val slipPath = repository.uploadPlanSlip(requestId, slipBytes!!)
-                                    repository.submitPlanPayment(
-                                        organizationId, selectedTier, interval, amount.toDouble(), slipPath, transactionRef.trim()
-                                    )
-                                    slipBytes = null; transactionRef = ""
-                                    requests = repository.planPaymentRequests(organizationId)
-                                    message = "ส่งหลักฐานชำระเงินแล้ว รอผู้ดูแลตรวจสอบและอนุมัติ"
-                                    onSubscriptionChanged()
-                                } catch (e: Exception) { error = e.message ?: "ส่งคำขอชำระเงินไม่สำเร็จ" }
-                                finally { busy = false }
-                            }
-                        },
-                        enabled = !busy && platformQr != null,
-                        modifier = Modifier.fillMaxWidth()
-                    ) { Text(if (busy) "กำลังส่ง..." else "ส่งหลักฐานและขอเปิดใช้งานแพ็กเกจ") }
                 }
             }
         }
@@ -361,10 +364,16 @@ fun StoreFlowPlansScreen(
         if (platformAdmin) item {
             Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("ตั้งค่า QR รับเงินของ StoreFlow (ผู้ดูแลระบบ)", fontWeight = FontWeight.Bold)
+                    Text("ตั้งค่าบัญชีรับเงินค่าแพ็กเกจ StoreFlow", fontWeight = FontWeight.Bold)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("เปิดรับชำระเงินด้วยการโอน")
+                        Switch(checked = billingEnabled, onCheckedChange = { billingEnabled = it }, enabled = !busy)
+                    }
                     OutlinedTextField(adminAccountName, { adminAccountName = it }, label = { Text("ชื่อบัญชี") }, modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(adminBankName, { adminBankName = it }, label = { Text("ธนาคาร") }, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(adminAccountNumber, { adminAccountNumber = it }, label = { Text("เลขบัญชี / พร้อมเพย์") }, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(adminAccountNumber, { adminAccountNumber = it }, label = { Text("เลขบัญชี") }, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(adminPromptPayId, { adminPromptPayId = it }, label = { Text("เลขพร้อมเพย์ (ถ้ามี)") }, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(adminInstructions, { adminInstructions = it }, label = { Text("คำแนะนำการชำระเงิน") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
                     OutlinedButton(onClick = { adminQrPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
                         enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("อัปโหลด / เปลี่ยน QR ของ StoreFlow") }
                     Button(onClick = {
@@ -372,7 +381,12 @@ fun StoreFlowPlansScreen(
                             busy = true
                             try {
                                 repository.savePlatformSettings((platformSettings ?: StoreFlowPlatformSettings()).copy(
-                                    accountName = adminAccountName, accountNumber = adminAccountNumber, bankName = adminBankName
+                                    accountName = adminAccountName.trim().ifBlank { null },
+                                    accountNumber = adminAccountNumber.trim().ifBlank { null },
+                                    bankName = adminBankName.trim().ifBlank { null },
+                                    promptpayId = adminPromptPayId.trim().ifBlank { null },
+                                    isEnabled = billingEnabled,
+                                    instructions = adminInstructions.trim().ifBlank { null }
                                 ))
                                 message = "บันทึกข้อมูลบัญชี StoreFlow แล้ว"
                                 reload()
@@ -386,11 +400,89 @@ fun StoreFlowPlansScreen(
         error?.let { msg -> item { Text(msg, color = MaterialTheme.colorScheme.error) } }
         message?.let { msg -> item { Text(msg, color = MaterialTheme.colorScheme.primary) } }
     }
+
+    if (checkoutOpen && selectedTier != "free") {
+        StoreFlowCheckoutSheet(
+            planName = selectedPlan.title,
+            billingPeriod = interval,
+            amount = amount,
+            settings = platformSettings,
+            qrBitmap = platformQr,
+            slipAttached = slipBytes != null,
+            slipPreview = slipPreview,
+            transactionRef = transactionRef,
+            onTransactionRefChange = { transactionRef = it },
+            busy = busy,
+            error = error,
+            manualPaymentAllowed = BuildConfig.ALLOW_MANUAL_SUBSCRIPTION_PAYMENT,
+            onPickSlip = {
+                imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+            },
+            onDismiss = {
+                if (!busy) {
+                    checkoutOpen = false
+                    slipBytes = null
+                    slipPreview = null
+                    transactionRef = ""
+                    error = null
+                }
+            },
+            onSubmit = {
+                scope.launch {
+                    busy = true
+                    error = null
+                    try {
+                        require(BuildConfig.ALLOW_MANUAL_SUBSCRIPTION_PAYMENT) {
+                            "ช่องทางโอนเงินไม่เปิดใช้งานในแอป Google Play"
+                        }
+                        require(platformSettings?.isEnabled == true) {
+                            "ผู้ดูแลยังไม่ได้เปิดรับชำระเงิน กรุณาติดต่อฝ่ายสนับสนุน"
+                        }
+                        require(slipBytes != null) { "กรุณาแนบรูปสลิปก่อนส่งคำขอ" }
+                        require(transactionRef.trim().length >= 6) { "กรุณากรอกเลขอ้างอิงอย่างน้อย 6 ตัวอักษร" }
+                        val requestId = UUID.randomUUID().toString()
+                        val slipPath = repository.uploadPlanSlip(requestId, slipBytes!!)
+                        repository.submitPlanPayment(
+                            organizationId, selectedTier, interval, amount.toDouble(),
+                            slipPath, transactionRef.trim()
+                        )
+                        checkoutOpen = false
+                        slipBytes = null
+                        slipPreview = null
+                        transactionRef = ""
+                        requests = repository.planPaymentRequests(organizationId)
+                        message = "ส่งหลักฐานชำระเงินแล้ว รอผู้ดูแลตรวจสอบและอนุมัติ"
+                        onSubscriptionChanged()
+                    } catch (e: Exception) {
+                        error = e.message ?: "ส่งคำขอชำระเงินไม่สำเร็จ"
+                    } finally {
+                        busy = false
+                    }
+                }
+            }
+        )
+    }
+}
+
+
+private fun amountForPlan(
+    plan: StoreFlowPlan,
+    plans: List<com.storeflow.app.data.StoreFlowSubscriptionPlan>,
+    interval: String
+): Int {
+    val remote = plans.firstOrNull { it.id == plan.tier && it.isActive }
+    return when {
+        plan.tier == "free" -> 0
+        plan.tier == "lifetime" -> 2590
+        remote != null -> (if (interval == "year") remote.yearlyPriceThb else remote.monthlyPriceThb).toInt()
+        interval == "year" -> plan.yearly
+        else -> plan.monthly
+    }
 }
 
 
 private fun formatStoreFlowThaiDateTime(value: String?): String {
-    if (value.isNullOrBlank()) return "-"
+    if (value.isNullOrBlank()) return "ไม่ระบุวันที่"
     return runCatching {
         val instant = runCatching { java.time.Instant.parse(value) }
             .getOrElse { java.time.OffsetDateTime.parse(value).toInstant() }
