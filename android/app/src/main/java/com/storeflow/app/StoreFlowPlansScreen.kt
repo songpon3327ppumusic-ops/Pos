@@ -89,7 +89,7 @@ fun StoreFlowPlansScreen(
                 val bytes = repository.downloadPlatformFile(path)
                 BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.let { request.id to it }
             }.getOrNull()
-        }.filterNotNull().toMap() else emptyMap()
+        }.toMap() else emptyMap()
         adminAccountName = platformSettings?.accountName.orEmpty()
         adminAccountNumber = platformSettings?.accountNumber.orEmpty()
         adminBankName = platformSettings?.bankName.orEmpty()
