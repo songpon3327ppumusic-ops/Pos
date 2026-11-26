@@ -1737,6 +1737,74 @@ private fun ScheduleShiftDialog(
     )
 }
 
+private data class OtherSalesChannel(
+    val name: String,
+    val total: Double,
+    val bills: Int
+)
+
+private fun salesPaymentGroup(value: String?): String {
+    val method = value.orEmpty().trim().lowercase(Locale.ROOT)
+    val compact = method.filter { it.isLetterOrDigit() }
+    return when {
+        compact in setOf("cash", "cashpayment", "เงินสด") ||
+            compact.startsWith("cash") || compact.contains("เงินสด") -> "cash"
+        compact in setOf(
+            "qr", "promptpay", "qrpromptpay", "qrtransfer", "transfer",
+            "banktransfer", "banktransferpayment", "โอนเงิน"
+        ) || compact.contains("qr") || compact.contains("promptpay") ||
+            compact.contains("transfer") || compact.contains("โอนเงิน") -> "qr"
+        else -> "other"
+    }
+}
+
+private fun csvCell(value: String): String =
+    "\"" + value.replace("\"", "\"\"") + "\""
+
+private fun shareSalesReport(context: Context, uri: Uri, mimeType: String): Boolean =
+    runCatching {
+        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+            type = mimeType
+            putExtra(Intent.EXTRA_STREAM, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(Intent.createChooser(sendIntent, "แชร์รายงาน StoreFlow"))
+        true
+    }.getOrDefault(false)
+
+private fun writeSalesReportPdf(context: Context, uri: Uri, rows: List<String>) {
+    val document = PdfDocument()
+    try {
+        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.BLACK
+            textSize = 15f
+        }
+        var pageNumber = 1
+        var page = document.startPage(PdfDocument.PageInfo.Builder(595, 842, pageNumber).create())
+        var y = 54f
+        rows.forEachIndexed { index, row ->
+            if (y > 790f) {
+                document.finishPage(page)
+                pageNumber += 1
+                page = document.startPage(PdfDocument.PageInfo.Builder(595, 842, pageNumber).create())
+                y = 54f
+            }
+            paint.textSize = if (index == 0) 21f else 14f
+            paint.isFakeBoldText = index == 0 || row.startsWith("ยอดขายรวม") ||
+                row.startsWith("เงินสด") || row.startsWith("QR / โอนเงิน") ||
+                row.startsWith("ช่องทางอื่น")
+            page.canvas.drawText(row.take(82), 40f, y, paint)
+            y += if (index == 0) 34f else 25f
+        }
+        document.finishPage(page)
+        context.contentResolver.openOutputStream(uri)?.use { output ->
+            document.writeTo(output)
+        } ?: error("ไม่สามารถเปิดไฟล์ปลายทางสำหรับบันทึก PDF ได้")
+    } finally {
+        document.close()
+    }
+}
+
 @Composable
 private fun ReportsScreen(
     modifier: Modifier,
@@ -1745,96 +1813,195 @@ private fun ReportsScreen(
     products: List<StoreProduct>
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     var period by rememberSaveable { mutableStateOf("today") }
     var sales by remember { mutableStateOf(emptyList<StoreSaleSummary>()) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
+    var exportMessage by remember { mutableStateOf<String?>(null) }
+    var refreshVersion by rememberSaveable { mutableIntStateOf(0) }
+
     val today = remember { LocalDate.now(ZoneId.of("Asia/Bangkok")) }
+    val zone = remember { ZoneId.of("Asia/Bangkok") }
     val fromDate = when (period) {
         "7days" -> today.minusDays(6)
         "month" -> today.withDayOfMonth(1)
         else -> today
     }
-    val fromInclusive = remember(period) {
-        fromDate.atStartOfDay(ZoneId.of("Asia/Bangkok")).toInstant().toString()
+    val untilDate = today.plusDays(1)
+    val fromInclusive = fromDate.atStartOfDay(zone).toInstant().toString()
+    val untilExclusive = untilDate.atStartOfDay(zone).toInstant().toString()
+    val periodLabel = when (period) {
+        "7days" -> "7 วันล่าสุด"
+        "month" -> "เดือนนี้"
+        else -> "วันนี้"
     }
+
     val total = sales.sumOf { it.total }
-    val cashTotal = sales.filter { it.paymentMethod.equals("cash", true) }.sumOf { it.total }
-    val qrTotal = sales.filter {
-        val method = it.paymentMethod.orEmpty().lowercase()
-        method.contains("qr") || method.contains("promptpay") || method.contains("transfer")
-    }.sumOf { it.total }
-    val csvLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
-        if (uri != null) runCatching {
-            val csv = buildString {
-                appendLine("metric,value")
-                appendLine("period,$period")
-                appendLine("from_date,$fromDate")
-                appendLine("total_sales,$total")
-                appendLine("cash,$cashTotal")
-                appendLine("qr_transfer,$qrTotal")
-                appendLine("orders,${sales.size}")
-                appendLine("products,${products.size}")
-                appendLine("low_stock,${products.count { it.stock <= it.minStock }}")
+    val cashSales = sales.filter { salesPaymentGroup(it.paymentMethod) == "cash" }
+    val qrSales = sales.filter { salesPaymentGroup(it.paymentMethod) == "qr" }
+    val otherSales = sales.filter { salesPaymentGroup(it.paymentMethod) == "other" }
+    val cashTotal = cashSales.sumOf { it.total }
+    val qrTotal = qrSales.sumOf { it.total }
+    val otherTotal = otherSales.sumOf { it.total }
+    val reconciledTotal = cashTotal + qrTotal + otherTotal
+    val otherBreakdown = otherSales.groupBy {
+        it.paymentMethod?.trim()?.takeIf(String::isNotEmpty) ?: "ไม่ระบุช่องทาง"
+    }.map { (name, rows) ->
+        OtherSalesChannel(name, rows.sumOf { it.total }, rows.size)
+    }.sortedByDescending { it.total }
+
+    val csvLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri ->
+        if (uri != null) {
+            runCatching {
+                val csv = buildString {
+                    append('\uFEFF')
+                    appendLine("รายการ,ค่า")
+                    appendLine("\${csvCell("ช่วงเวลา")},\${csvCell(periodLabel)}")
+                    appendLine("\${csvCell("วันที่เริ่มต้น")},\${csvCell(fromDate.toString())}")
+                    appendLine("\${csvCell("วันที่สิ้นสุด")},\${csvCell(today.toString())}")
+                    appendLine("\${csvCell("ยอดขายรวม")},\${csvCell(total.toString())}")
+                    appendLine("\${csvCell("เงินสด")},\${csvCell(cashTotal.toString())}")
+                    appendLine("\${csvCell("QR / โอนเงิน")},\${csvCell(qrTotal.toString())}")
+                    appendLine("\${csvCell("ช่องทางอื่นๆ")},\${csvCell(otherTotal.toString())}")
+                    appendLine("\${csvCell("ยอดรวมตรวจสอบ")},\${csvCell(reconciledTotal.toString())}")
+                    appendLine("\${csvCell("จำนวนบิล")},\${csvCell(sales.size.toString())}")
+                    appendLine()
+                    appendLine("ช่องทางอื่น,ยอดเงิน,จำนวนบิล")
+                    otherBreakdown.forEach { channel ->
+                        appendLine(
+                            "\${csvCell(channel.name)},\${csvCell(channel.total.toString())},\${channel.bills}"
+                        )
+                    }
+                    appendLine()
+                    appendLine("\${csvCell("สินค้าในระบบ")},\${products.size}")
+                    appendLine("\${csvCell("สินค้าใกล้หมด")},\${products.count { it.stock <= it.minStock }}")
+                }
+                context.contentResolver.openOutputStream(uri)?.bufferedWriter(Charsets.UTF_8)?.use {
+                    it.write(csv)
+                } ?: error("ไม่สามารถเปิดไฟล์ปลายทางสำหรับบันทึก CSV ได้")
+            }.onSuccess {
+                exportMessage = if (shareSalesReport(context, uri, "text/csv")) {
+                    "บันทึก CSV แล้ว เลือกแอปเพื่อแชร์รายงานได้"
+                } else {
+                    "บันทึก CSV แล้ว สามารถเปิดไฟล์จากตำแหน่งที่เลือกได้"
+                }
+                error = null
+            }.onFailure {
+                error = it.message ?: "ส่งออก CSV ไม่สำเร็จ"
             }
-            context.contentResolver.openOutputStream(uri)?.bufferedWriter(Charsets.UTF_8)?.use { it.write(csv) }
-                ?: error("บันทึก CSV ไม่สำเร็จ")
-        }.onFailure { error = it.message ?: "ส่งออก CSV ไม่สำเร็จ" }
+        }
     }
-    val pdfLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
-        if (uri != null) runCatching {
-            val pdf = PdfDocument()
-            val page = pdf.startPage(PdfDocument.PageInfo.Builder(595, 842, 1).create())
-            val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { textSize = 16f }
-            val rows = listOf(
-                "StoreFlow • รายงานการขาย",
-                "ช่วงเวลา: ${when (period) { "7days" -> "7 วันล่าสุด"; "month" -> "เดือนนี้"; else -> "วันนี้" }}",
-                "ตั้งแต่: $fromDate",
-                "ยอดขายรวม: ${money(total)}",
-                "รับเงินสด: ${money(cashTotal)}",
-                "QR / โอนเงิน: ${money(qrTotal)}",
-                "จำนวนบิล: ${sales.size}",
-                "สินค้าในระบบ: ${products.size}",
-                "สินค้าใกล้หมด: ${products.count { it.stock <= it.minStock }}"
-            )
-            var y = 70f
-            rows.forEachIndexed { index, line ->
-                paint.textSize = if (index == 0) 22f else 15f
-                paint.isFakeBoldText = index == 0
-                page.canvas.drawText(line, 42f, y, paint)
-                y += 38f
+
+    val pdfLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/pdf")
+    ) { uri ->
+        if (uri != null) {
+            runCatching {
+                val rows = buildList {
+                    add("StoreFlow • รายงานการขาย")
+                    add("ช่วงเวลา: $periodLabel")
+                    add("ตั้งแต่วันที่: $fromDate")
+                    add("ถึงวันที่: $today")
+                    add("ยอดขายรวม: \${money(total)}")
+                    add("เงินสด: \${money(cashTotal)} (\${cashSales.size} บิล)")
+                    add("QR / โอนเงิน: \${money(qrTotal)} (\${qrSales.size} บิล)")
+                    add("ช่องทางอื่นๆ: \${money(otherTotal)} (\${otherSales.size} บิล)")
+                    add("ยอดรวมตรวจสอบ: \${money(reconciledTotal)}")
+                    add("จำนวนบิลทั้งหมด: \${sales.size}")
+                    add("")
+                    add("รายละเอียดช่องทางอื่นๆ")
+                    if (otherBreakdown.isEmpty()) add("- ไม่มีรายการ")
+                    else otherBreakdown.forEach {
+                        add("\${it.name}: \${money(it.total)} (\${it.bills} บิล)")
+                    }
+                    add("")
+                    add("สินค้าในระบบ: \${products.size}")
+                    add("สินค้าใกล้หมด: \${products.count { it.stock <= it.minStock }}")
+                    add("")
+                    add("สร้างรายงานจาก StoreFlow Android")
+                }
+                writeSalesReportPdf(context, uri, rows)
+            }.onSuccess {
+                exportMessage = if (shareSalesReport(context, uri, "application/pdf")) {
+                    "บันทึก PDF แล้ว เลือกแอปเพื่อแชร์รายงานได้"
+                } else {
+                    "บันทึก PDF แล้ว สามารถเปิดไฟล์จากตำแหน่งที่เลือกได้"
+                }
+                error = null
+            }.onFailure {
+                error = it.message ?: "ส่งออก PDF ไม่สำเร็จ"
             }
-            pdf.finishPage(page)
-            context.contentResolver.openOutputStream(uri)?.use { pdf.writeTo(it) }
-                ?: error("บันทึก PDF ไม่สำเร็จ")
-            pdf.close()
-        }.onFailure { error = it.message ?: "ส่งออก PDF ไม่สำเร็จ" }
+        }
     }
-    LaunchedEffect(organizationId, fromInclusive) {
+
+    LaunchedEffect(organizationId, fromInclusive, untilExclusive, refreshVersion) {
         loading = true
+        error = null
+        exportMessage = null
         try {
-            sales = withContext(Dispatchers.IO) { repo.reportSales(organizationId, fromInclusive) }
-            error = null
-        } catch (e: Exception) { error = e.message ?: "โหลดรายงานไม่สำเร็จ" }
-        finally { loading = false }
+            sales = withContext(Dispatchers.IO) {
+                repo.reportSales(organizationId, fromInclusive, untilExclusive)
+            }
+        } catch (e: Exception) {
+            error = e.message ?: "โหลดรายงานไม่สำเร็จ"
+            sales = emptyList()
+        } finally {
+            loading = false
+        }
     }
-    LazyColumn(modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item { Text("รายงานการขาย", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold) }
+
+    LazyColumn(
+        modifier.fillMaxSize().padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("รายงานการขาย", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                    Text(
+                        "$periodLabel • $fromDate ถึง $today",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+                IconButton(onClick = { refreshVersion += 1 }, enabled = !loading) {
+                    if (loading) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                    else Icon(Icons.Default.Refresh, contentDescription = "รีเฟรชรายงาน")
+                }
+            }
+        }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                listOf("today" to "วันนี้", "7days" to "7 วันล่าสุด", "month" to "เดือนนี้").forEach { (key, label) ->
-                    FilterChip(selected = period == key, onClick = { period = key }, label = { Text(label) })
-                }
+                listOf("today" to "วันนี้", "7days" to "7 วันล่าสุด", "month" to "เดือนนี้")
+                    .forEach { (key, label) ->
+                        FilterChip(
+                            selected = period == key,
+                            onClick = { if (period != key) period = key },
+                            enabled = !loading,
+                            label = { Text(label) }
+                        )
+                    }
             }
         }
         if (loading) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
         item { Metric("ยอดขายรวม", money(total), Modifier.fillMaxWidth()) }
         item { Metric("จำนวนบิล", sales.size.toString(), Modifier.fillMaxWidth()) }
         item {
-            Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(18.dp)) {
-                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("สรุปยอดรับแยกตามช่องทาง", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                shape = RoundedCornerShape(18.dp)
+            ) {
+                Column(
+                    Modifier.fillMaxWidth().padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        "สรุปยอดรับแยกตามช่องทาง",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.Payments, null, tint = Green)
                         Spacer(Modifier.width(8.dp))
@@ -1847,25 +2014,77 @@ private fun ReportsScreen(
                         Text("QR / โอนเงิน", Modifier.weight(1f))
                         Text(money(qrTotal), fontWeight = FontWeight.Bold)
                     }
-                    Text("ยอดช่องทางอื่นหรือรายการที่ไม่มีข้อมูลวิธีชำระ อาจไม่รวมในสองหมวดนี้",
-                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.MoreHoriz, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.width(8.dp))
+                        Text("ช่องทางอื่นๆ", Modifier.weight(1f))
+                        Text(money(otherTotal), fontWeight = FontWeight.Bold)
+                    }
+                    if (otherBreakdown.isNotEmpty()) {
+                        HorizontalDivider()
+                        otherBreakdown.forEach { channel ->
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    channel.name,
+                                    Modifier.weight(1f),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    "\${money(channel.total)} • \${channel.bills} บิล",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                        }
+                    }
+                    HorizontalDivider()
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("รวมยอดแยกช่องทาง", Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+                        Text(money(reconciledTotal), fontWeight = FontWeight.Bold)
+                    }
+                    if (kotlin.math.abs(total - reconciledTotal) > 0.009) {
+                        Text(
+                            "ตรวจพบยอดไม่ตรงกัน กรุณารีเฟรชหรือตรวจสอบข้อมูลบิล",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    } else {
+                        Text(
+                            "ยอดแยกช่องทางตรงกับยอดขายรวม",
+                            color = Color(0xFF15803D),
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
                 }
             }
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { csvLauncher.launch("StoreFlow-report.csv") },
-                    enabled = !loading && sales.isNotEmpty(), modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Default.TableView, null); Spacer(Modifier.width(5.dp)); Text("ส่งออก CSV")
+                OutlinedButton(
+                    onClick = { csvLauncher.launch("StoreFlow-report.csv") },
+                    enabled = !loading,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Default.TableView, null)
+                    Spacer(Modifier.width(5.dp))
+                    Text("ส่งออก CSV")
                 }
-                Button(onClick = { pdfLauncher.launch("StoreFlow-report.pdf") },
-                    enabled = !loading && sales.isNotEmpty(), modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Default.PictureAsPdf, null); Spacer(Modifier.width(5.dp)); Text("ส่งออก PDF")
+                Button(
+                    onClick = { pdfLauncher.launch("StoreFlow-report.pdf") },
+                    enabled = !loading,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Default.PictureAsPdf, null)
+                    Spacer(Modifier.width(5.dp))
+                    Text("ส่งออก PDF")
                 }
             }
         }
         item { Metric("สินค้าในระบบ", products.size.toString(), Modifier.fillMaxWidth()) }
         item { Metric("สินค้าใกล้หมด", products.count { it.stock <= it.minStock }.toString(), Modifier.fillMaxWidth()) }
+        exportMessage?.let { msg ->
+            item { Text(msg, color = Color(0xFF15803D), style = MaterialTheme.typography.bodySmall) }
+        }
         error?.let { msg -> item { Text(msg, color = MaterialTheme.colorScheme.error) } }
     }
 }
