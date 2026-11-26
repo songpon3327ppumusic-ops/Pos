@@ -58,7 +58,7 @@ fun StoreFlowPlansScreen(
     var platformSettings by remember { mutableStateOf<StoreFlowPlatformSettings?>(null) }
     var platformQr by remember { mutableStateOf<Bitmap?>(null) }
     var platformAdmin by remember { mutableStateOf(false) }
-    var selectedTier by remember { mutableStateOf("basic") }
+    var selectedTier by remember(currentSubscription?.planTier) { mutableStateOf(currentSubscription?.planTier ?: "basic") }
     var interval by remember { mutableStateOf("month") }
     var slipBytes by remember { mutableStateOf<ByteArray?>(null) }
     var transactionRef by remember { mutableStateOf("") }
