@@ -544,9 +544,11 @@ private fun Metric(title: String, value: String, modifier: Modifier = Modifier) 
 @Composable
 private fun ProductsScreen(
     modifier: Modifier, orgId: String, products: List<StoreProduct>,
-    repo: StoreFlowRepository, canManage: Boolean, onChanged: () -> Unit
+    repo: StoreFlowRepository, canManage: Boolean, permissions: PlanPermissions,
+    onUpgrade: () -> Unit, onChanged: () -> Unit
 ) {
     var adding by remember { mutableStateOf(false) }
+    var showUpgradeDialog by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf<StoreProduct?>(null) }
     var editing by remember { mutableStateOf<StoreProduct?>(null) }
     var adjusting by remember { mutableStateOf<StoreProduct?>(null) }
@@ -559,7 +561,10 @@ private fun ProductsScreen(
                 Text("สินค้าและสต็อก", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                 Text(products.size.toString() + " รายการ", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            if (canManage) Button(onClick = { adding = true }) { Icon(Icons.Default.Add, null); Text("เพิ่ม") }
+            if (canManage) Button(onClick = {
+                val limit = permissions.productLimit()
+                if (limit != null && products.size >= limit) showUpgradeDialog = true else adding = true
+            }) { Icon(Icons.Default.Add, null); Text("เพิ่ม") }
         }
         Spacer(Modifier.height(10.dp))
         if (products.isEmpty()) EmptyCard("ยังไม่มีสินค้า", "เพิ่มสินค้าเพื่อเริ่มขายและจัดการสต็อก")
@@ -615,6 +620,10 @@ private fun ProductsScreen(
             onChanged()
         }
     ) }
+    if (showUpgradeDialog) StoreFlowUpgradeDialog(
+        onDismiss = { showUpgradeDialog = false }, onUpgrade = onUpgrade,
+        message = "ร้านนี้ถึงโควตาสินค้าหรือพนักงานของแพ็กเกจแล้ว"
+    )
     deleting?.let { p ->
         AlertDialog(
             onDismissRequest = { deleting = null },
@@ -736,8 +745,8 @@ private fun StockDialog(product: StoreProduct, onDismiss: () -> Unit, onSave: su
 @Composable
 private fun PosScreen(
     modifier: Modifier, orgId: String, products: List<StoreProduct>,
-    repo: StoreFlowRepository, role: String,
-    onOpenSettings: () -> Unit = {}, onCompleted: () -> Unit
+    repo: StoreFlowRepository, role: String, permissions: PlanPermissions,
+    onUpgrade: () -> Unit, onOpenSettings: () -> Unit = {}, onCompleted: () -> Unit
 ) {
     val cart = remember { mutableStateMapOf<String, Double>() }
     val scope = rememberCoroutineScope()
@@ -768,6 +777,7 @@ private fun PosScreen(
     var cashDialog by remember { mutableStateOf(false) }
     var promptPayDialog by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
+    var showUpgradeDialog by remember { mutableStateOf(false) }
     var paymentSettings by remember(orgId) { mutableStateOf<StorePaymentSettings?>(null) }
     var customQrBitmap by remember(orgId) { mutableStateOf<Bitmap?>(null) }
     LaunchedEffect(paymentSettings?.customQrUrl, paymentSettings?.qrImagePath) {
@@ -796,7 +806,11 @@ private fun PosScreen(
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 8.dp),
             singleLine = true, label = { Text("ค้นหาสินค้า / สแกนบาร์โค้ด") },
             leadingIcon = { Icon(Icons.Default.Search, null) },
-            trailingIcon = { Row(verticalAlignment = Alignment.CenterVertically) { BarcodeScanButton(onBarcode = { search = it }); if (search.isNotBlank()) IconButton(onClick = { search = "" }) { Icon(Icons.Default.Close, "ล้าง") } } }
+            trailingIcon = { Row(verticalAlignment = Alignment.CenterVertically) {
+                if (permissions.hasFeature(StoreFeature.BARCODE_SCANNER)) BarcodeScanButton(onBarcode = { search = it })
+                else IconButton(onClick = { showUpgradeDialog = true }) { Icon(Icons.Default.Lock, "สแกนบาร์โค้ดต้องอัปเกรด") }
+                if (search.isNotBlank()) IconButton(onClick = { search = "" }) { Icon(Icons.Default.Close, "ล้าง") }
+            } }
         )
         LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(7.dp)) {
             if (filtered.isEmpty()) item { EmptyCard("ไม่พบสินค้า", "ตรวจสอบคำค้นหา SKU หรือบาร์โค้ด") }
@@ -830,10 +844,15 @@ private fun PosScreen(
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = { cart.clear() }, enabled = selected.isNotEmpty() && !busy) { Text("ล้างตะกร้า") }
-                    Button(onClick = { paymentDialog = true }, enabled = selected.isNotEmpty() && !busy,
+                    Button(onClick = { paymentDialog = true }, enabled = selected.isNotEmpty() && !busy && permissions.canCreateBill,
                         modifier = Modifier.weight(1f)) {
                         Text(if (busy) "กำลังบันทึก..." else "เลือกวิธีชำระเงิน")
                     }
+                }
+                if (!permissions.canCreateBill) {
+                    Text("แพ็กเกจหมดอายุ ไม่สามารถสร้างบิลใหม่ได้ แต่ยังดูข้อมูลเดิมและต่ออายุได้",
+                        color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    TextButton(onClick = onUpgrade) { Text("ต่ออายุ / อัปเกรดแพ็กเกจ") }
                 }
                 message?.let { Text(it, color = MaterialTheme.colorScheme.primary,
                     style = MaterialTheme.typography.bodySmall) }
@@ -849,7 +868,7 @@ private fun PosScreen(
                     onClick = { paymentDialog = false; cashDialog = true },
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("เงินสด") }
-                if (paymentSettings?.promptpayEnabled == true) OutlinedButton(
+                if (paymentSettings?.promptpayEnabled == true && permissions.hasFeature(StoreFeature.STORE_PAYMENT_QR)) OutlinedButton(
                     onClick = {
                         if (paymentSettings?.promptpayId.isNullOrBlank()) {
                             message = "เจ้าของร้านยังไม่ได้ตั้งค่าเบอร์พร้อมเพย์"
@@ -908,6 +927,9 @@ private fun PosScreen(
             }
         )
     }
+    if (showUpgradeDialog) StoreFlowUpgradeDialog(
+        onDismiss = { showUpgradeDialog = false }, onUpgrade = { showUpgradeDialog = false; onUpgrade() }
+    )
     receipt?.let { text ->
         AlertDialog(
             onDismissRequest = { receipt = null },
@@ -916,7 +938,8 @@ private fun PosScreen(
             confirmButton = {
                 Row {
                     TextButton(onClick = { receiptSaveLauncher.launch("StoreFlow-Receipt.pdf") }) { Text("บันทึก PDF") }
-                    TextButton(onClick = { printStoreFlowReceipt(context, text) }) { Text("พิมพ์") }
+                    if (permissions.hasFeature(StoreFeature.RECEIPT_PRINTER)) TextButton(onClick = { printStoreFlowReceipt(context, text) }) { Text("พิมพ์") }
+                    else TextButton(onClick = { showUpgradeDialog = true }) { Text("พิมพ์ 🔒") }
                     TextButton(onClick = {
                         val send = Intent(Intent.ACTION_SEND).apply {
                             type = "text/plain"; putExtra(Intent.EXTRA_TEXT, text)
@@ -1092,9 +1115,12 @@ private fun WorkforceScreen(
     modifier: Modifier,
     organizationId: String,
     repo: StoreFlowRepository,
-    canManage: Boolean
+    canManage: Boolean,
+    permissions: PlanPermissions,
+    onUpgrade: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
+    var showUpgradeDialog by remember { mutableStateOf(false) }
     val today = remember { LocalDate.now(ZoneId.of("Asia/Bangkok")).toString() }
     var employees by remember { mutableStateOf(emptyList<StoreEmployee>()) }
     var shifts by remember { mutableStateOf(emptyList<StoreShift>()) }
@@ -1179,19 +1205,33 @@ private fun WorkforceScreen(
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { addingEmployee = true }, modifier = Modifier.weight(1f)) {
-                Icon(Icons.Default.PersonAdd, null); Spacer(Modifier.width(5.dp)); Text("เพิ่มพนักงาน")
+            Button(onClick = {
+                val limit = permissions.employeeLimit()
+                if (limit != null && employees.size >= limit) showUpgradeDialog = true
+                else addingEmployee = true
+            }, modifier = Modifier.weight(1f)) {
+                Icon(Icons.Default.PersonAdd, null); Spacer(Modifier.width(5.dp))
+                Text(if (permissions.employeeLimit() != null && employees.size >= permissions.employeeLimit()!!) "ถึงโควตาพนักงาน" else "เพิ่มพนักงาน")
             }
         }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
         LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            item {
+            if (permissions.hasFeature(StoreFeature.SHIFTS)) item {
                 Text("ตารางกะวันนี้", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             }
-            if (shifts.isEmpty()) item {
+            if (permissions.hasFeature(StoreFeature.SHIFTS) && shifts.isEmpty()) item {
                 EmptyCard("ยังไม่มีกะงานวันนี้", "เลือกพนักงานแล้วกดจัดกะเพื่อเพิ่มตารางเวลาทำงาน")
             }
-            items(shifts, key = { it.id }) { shift ->
+            if (!permissions.hasFeature(StoreFeature.SHIFTS)) item {
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                    Column(Modifier.fillMaxWidth().padding(14.dp)) {
+                        Text("กะงานและลงเวลาเข้างาน", fontWeight = FontWeight.SemiBold)
+                        Text("เปิดใช้งานได้ตั้งแต่แพ็กเกจ Standard", style = MaterialTheme.typography.bodySmall)
+                        TextButton(onClick = { showUpgradeDialog = true }) { Text("อัปเกรดแพ็กเกจ") }
+                    }
+                }
+            }
+            if (permissions.hasFeature(StoreFeature.SHIFTS)) items(shifts, key = { it.id }) { shift ->
                 val employee = employees.firstOrNull { it.id == shift.employeeId }
                 Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
                     Column(Modifier.fillMaxWidth().padding(14.dp)) {
@@ -1218,18 +1258,23 @@ private fun WorkforceScreen(
                                 style = MaterialTheme.typography.bodySmall)
                         }
                         if (canManage) {
-                            TextButton(onClick = { salaryFor = employee }) { Text("เงินเดือน") }
-                            TextButton(onClick = { schedulingFor = employee }) { Text("จัดกะ") }
+                            TextButton(onClick = {
+                                if (permissions.hasFeature(StoreFeature.PAYROLL_AUTO)) salaryFor = employee
+                                else showUpgradeDialog = true
+                            }) { Text(if (permissions.hasFeature(StoreFeature.PAYROLL_AUTO)) "เงินเดือน" else "เงินเดือน 🔒") }
+                            if (permissions.hasFeature(StoreFeature.SHIFTS)) {
+                                TextButton(onClick = { schedulingFor = employee }) { Text("จัดกะ") }
+                            }
                         }
                     }
                 }
             }
-            item {
+            if (permissions.hasFeature(StoreFeature.ATTENDANCE)) item {
                 Spacer(Modifier.height(4.dp))
                 Text("บันทึกเวลาเข้างานวันนี้", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             }
-            if (attendance.isEmpty()) item { EmptyCard("ยังไม่มีรายการลงเวลา", "เมื่อพนักงานลงเวลา รายการจะแสดงที่นี่") }
-            items(attendance, key = { it.id }) { record ->
+            if (permissions.hasFeature(StoreFeature.ATTENDANCE) && attendance.isEmpty()) item { EmptyCard("ยังไม่มีรายการลงเวลา", "เมื่อพนักงานลงเวลา รายการจะแสดงที่นี่") }
+            if (permissions.hasFeature(StoreFeature.ATTENDANCE)) items(attendance, key = { it.id }) { record ->
                 val employee = employees.firstOrNull { it.id == record.employeeId }
                 Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
                     Column(Modifier.padding(14.dp)) {
@@ -1275,6 +1320,9 @@ private fun WorkforceScreen(
             }
         )
     }
+    if (showUpgradeDialog) StoreFlowUpgradeDialog(
+        onDismiss = { showUpgradeDialog = false }, onUpgrade = onUpgrade
+    )
 }
 
 
@@ -1490,10 +1538,12 @@ private fun ReportsScreen(modifier: Modifier, metrics: StoreMetrics, products: L
 @Composable
 private fun SettingsScreen(
     modifier: Modifier, store: StoreOrganization, role: String, email: String,
-    repo: StoreFlowRepository, onSwitch: () -> Unit, onSignOut: () -> Unit
+    repo: StoreFlowRepository, permissions: PlanPermissions,
+    onUpgrade: () -> Unit, onSwitch: () -> Unit, onSignOut: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
     val canManage = role == "owner"
+    val canManageQr = canManage && permissions.hasFeature(StoreFeature.STORE_PAYMENT_QR)
     var settings by remember(store.id) { mutableStateOf(StorePaymentSettings(store.id)) }
     var merchantQrBitmap by remember(store.id) { mutableStateOf<Bitmap?>(null) }
     var subscription by remember { mutableStateOf<StoreSubscription?>(null) }
@@ -1620,6 +1670,8 @@ private fun SettingsScreen(
                     Text(store.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     Text("สิทธิ์: $role")
                     Text(email, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(permissions.packageLabel, fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary)
                     TextButton(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://benz-verse.com/storeflow-privacy"))) }) {
                         Text("นโยบายความเป็นส่วนตัวและ PDPA")
                     }
@@ -1631,34 +1683,39 @@ private fun SettingsScreen(
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("ตั้งค่าการรับชำระเงิน", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     if (!canManage) Text("เฉพาะเจ้าของร้านเท่านั้นที่แก้ไขได้")
+                    if (!permissions.hasFeature(StoreFeature.STORE_PAYMENT_QR)) {
+                        Text("การตั้งค่า QR รับเงินต้องใช้แพ็กเกจ Standard ขึ้นไป",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        TextButton(onClick = onUpgrade) { Text("อัปเกรดแพ็กเกจ") }
+                    }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("เงินสด", Modifier.weight(1f)); Switch(settings.cashEnabled,
                             { settings = settings.copy(cashEnabled = it) }, enabled = canManage)
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("PromptPay / QR", Modifier.weight(1f)); Switch(settings.promptpayEnabled,
-                            { settings = settings.copy(promptpayEnabled = it) }, enabled = canManage)
+                            { settings = settings.copy(promptpayEnabled = it) }, enabled = canManageQr)
                     }
                     OutlinedTextField(promptPayId, { promptPayId = it.filter(Char::isDigit) },
                         label = { Text("เบอร์พร้อมเพย์ 10 หลัก หรือเลขบัตร 13 หลัก") },
-                        enabled = canManage, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        enabled = canManageQr, singleLine = true, modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(promptPayName, { promptPayName = it },
-                        label = { Text("ชื่อบัญชีพร้อมเพย์") }, enabled = canManage,
+                        label = { Text("ชื่อบัญชีพร้อมเพย์") }, enabled = canManageQr,
                         singleLine = true, modifier = Modifier.fillMaxWidth())
                     HorizontalDivider()
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("โอนเข้าบัญชีธนาคาร", Modifier.weight(1f)); Switch(settings.bankTransferEnabled,
-                            { settings = settings.copy(bankTransferEnabled = it) }, enabled = canManage)
+                            { settings = settings.copy(bankTransferEnabled = it) }, enabled = canManageQr)
                     }
                     OutlinedTextField(bankName, { bankName = it }, label = { Text("ธนาคาร") },
-                        enabled = canManage, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        enabled = canManageQr, singleLine = true, modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(bankAccountName, { bankAccountName = it }, label = { Text("ชื่อบัญชี") },
-                        enabled = canManage, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        enabled = canManageQr, singleLine = true, modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(bankAccountNumber, { bankAccountNumber = it }, label = { Text("เลขบัญชี") },
-                        enabled = canManage, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        enabled = canManageQr, singleLine = true, modifier = Modifier.fillMaxWidth())
                     merchantQrBitmap?.let { Image(it.asImageBitmap(), contentDescription = "QR รับเงินของร้าน",
                         modifier = Modifier.fillMaxWidth().height(190.dp)) }
-                    if (canManage) {
+                    if (canManageQr) {
                         OutlinedButton(onClick = { qrPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
                             enabled = !busy, modifier = Modifier.fillMaxWidth()) {
                             Text(if (settings.customQrUrl == null && settings.qrImagePath == null) "อัปโหลด QR ประจำร้าน" else "เปลี่ยนรูป QR ประจำร้าน")
