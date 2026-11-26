@@ -34,14 +34,16 @@ private data class StoreFlowPlan(
 )
 
 private val storeFlowPlans = listOf(
+    StoreFlowPlan("free", "Free", 0, 0, "สูงสุด 20 รายการ", "เจ้าของร้าน 1 คน",
+        "POS • QR พร้อมเพย์/รูป QR ร้าน • สแกนบาร์โค้ด • รายงานยอดขายรายวัน • ใบเสร็จรับเงินอย่างย่อ"),
     StoreFlowPlan("basic", "Basic", 199, 1990, "สูงสุด 50 รายการ", "พนักงาน 1 คน",
-        "ภาพรวม • POS • จัดการสินค้า • รายงานยอดขายพื้นฐาน"),
+        "ทุกอย่างใน Free • ใบเสนอราคา • ใบส่งของ"),
     StoreFlowPlan("standard", "Standard", 399, 3990, "สินค้าไม่จำกัด", "พนักงานสูงสุด 5 คน",
-        "ทุกอย่างใน Basic • กะงาน • ลงเวลา • QR รับเงินร้านค้า"),
+        "ทุกอย่างใน Basic • ตารางกะงาน • ลงเวลา • ใบกำกับภาษีเต็มรูป"),
     StoreFlowPlan("premium", "Premium", 799, 7990, "สินค้าไม่จำกัด", "พนักงานไม่จำกัด",
-        "ทุกฟีเจอร์ • เงินเดือนอัตโนมัติ • เอกสารภาษี • สแกนบาร์โค้ด • เครื่องพิมพ์ใบเสร็จ"),
+        "ทุกฟีเจอร์ • เงินเดือนอัตโนมัติ • 50 ทวิ • รับ-ส่งของ • ใบสำคัญรับ-จ่าย"),
     StoreFlowPlan("lifetime", "ซื้อขาด (Lifetime)", 2590, 2590, "สินค้าไม่จำกัด", "พนักงานไม่จำกัด",
-        "จ่ายครั้งเดียว ฿2,590 • ปลดล็อกทุกฟีเจอร์ตลอดชีพ")
+        "จ่ายครั้งเดียว ฿2,590 (ราคาปกติ ฿3,990) • ปลดล็อกทุกฟีเจอร์ตลอดชีพ")
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -51,6 +53,7 @@ fun StoreFlowPlansScreen(
     organizationId: String,
     repository: StoreFlowRepository,
     currentSubscription: StoreSubscription?,
+    permissions: PlanPermissions,
     onSubscriptionChanged: () -> Unit
 ) {
     val context = LocalContext.current
@@ -58,7 +61,9 @@ fun StoreFlowPlansScreen(
     var platformSettings by remember { mutableStateOf<StoreFlowPlatformSettings?>(null) }
     var platformQr by remember { mutableStateOf<Bitmap?>(null) }
     var platformAdmin by remember { mutableStateOf(false) }
-    var selectedTier by remember(currentSubscription?.planTier) { mutableStateOf(currentSubscription?.planTier ?: "basic") }
+    var selectedTier by remember(currentSubscription?.planTier, permissions.effectiveTier) {
+        mutableStateOf(permissions.effectiveTier.value.takeIf { it != "unknown" } ?: "free")
+    }
     var interval by remember { mutableStateOf("month") }
     var slipBytes by remember { mutableStateOf<ByteArray?>(null) }
     var transactionRef by remember { mutableStateOf("") }
@@ -138,16 +143,14 @@ fun StoreFlowPlansScreen(
         }
     }
 
-    val selectedPlan = storeFlowPlans.first { it.tier == selectedTier }
-    val amount = if (selectedTier == "lifetime") 2590 else if (interval == "year") selectedPlan.yearly else selectedPlan.monthly
-    val currentTier = currentSubscription?.planTier ?: currentSubscription?.planId ?: "basic"
-    val statusLabel = when (currentSubscription?.status) {
-        "trial", "trialing", "free" -> "ทดลองใช้ฟรี"
-        "pending_payment", "incomplete" -> "รอตรวจสอบการชำระเงิน"
-        "active" -> "ใช้งานอยู่"
-        "expired", "unpaid", "past_due" -> "หมดอายุ / รอชำระ"
-        else -> "ยังไม่มีแพ็กเกจ"
+    val selectedPlan = storeFlowPlans.firstOrNull { it.tier == selectedTier } ?: storeFlowPlans.first()
+    val amount = when (selectedTier) {
+        "free" -> 0
+        "lifetime" -> 2590
+        else -> if (interval == "year") selectedPlan.yearly else selectedPlan.monthly
     }
+    val currentTier = permissions.effectiveTier.value
+    val statusLabel = permissions.statusLabel
 
     LazyColumn(
         modifier = modifier.fillMaxSize().padding(horizontal = 16.dp),
@@ -187,7 +190,9 @@ fun StoreFlowPlansScreen(
                         Text(plan.title, modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                         if (selected) Icon(Icons.Default.CheckCircle, "เลือกแล้ว", tint = MaterialTheme.colorScheme.primary)
                     }
-                    if (plan.tier == "lifetime") {
+                    if (plan.tier == "free") {
+                        Text("฿0 • ตลอดชีพ", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                    } else if (plan.tier == "lifetime") {
                         Text("฿2,590 จ่ายครั้งเดียว", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                         Text("ราคาปกติ ฿3,990 • ประหยัด ฿1,400")
                     } else {
@@ -199,7 +204,7 @@ fun StoreFlowPlansScreen(
                 }
             }
         }
-        if (selectedTier != "lifetime") item {
+        if (selectedTier !in setOf("lifetime", "free")) item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -216,7 +221,31 @@ fun StoreFlowPlansScreen(
                 )
             }
         }
-        item {
+        if (selectedTier == "free") item {
+            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
+                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("เริ่มใช้งานแพ็กเกจ Free", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text("ฟรีตลอดชีพ • สินค้า 20 รายการ • เจ้าของร้านใช้งานคนเดียว • QR รับเงินและ POS ใช้งานได้")
+                    Button(
+                        enabled = !busy && currentTier != "free",
+                        onClick = {
+                            scope.launch {
+                                busy = true; error = null; message = null
+                                try {
+                                    repository.selectFreePlan(organizationId)
+                                    message = "เปลี่ยนเป็นแพ็กเกจ Free เรียบร้อย"
+                                    onSubscriptionChanged()
+                                } catch (e: Exception) {
+                                    error = e.message ?: "เปลี่ยนแพ็กเกจ Free ไม่สำเร็จ"
+                                } finally { busy = false }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text(if (busy) "กำลังเปลี่ยนแพ็กเกจ..." else if (currentTier == "free") "ใช้งานแพ็กเกจนี้อยู่" else "ใช้แพ็กเกจ Free") }
+                }
+            }
+        }
+        if (selectedTier != "free") item {
             Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                 Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("ชำระค่าแพ็กเกจ StoreFlow", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
