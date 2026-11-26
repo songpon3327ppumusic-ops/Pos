@@ -154,7 +154,7 @@ data class PlanPermissions(
             PlanTier.BASIC -> type in setOf("receipt", "quotation", "delivery_note")
             PlanTier.STANDARD -> type in setOf(
                 "receipt", "quotation", "delivery_note", "abbreviated_tax_invoice",
-                "tax_invoice", "invoice", "billing_note", "goods_receipt"
+                "tax_invoice", "invoice", "billing_note"
             )
             else -> false
         }
