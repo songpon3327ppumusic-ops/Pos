@@ -625,7 +625,7 @@ private fun ProductsScreen(
     ) }
     if (showUpgradeDialog) StoreFlowUpgradeDialog(
         onDismiss = { showUpgradeDialog = false }, onUpgrade = onUpgrade,
-        message = "ร้านนี้ถึงโควตาสินค้าหรือพนักงานของแพ็กเกจแล้ว"
+        message = "จำนวนสินค้าเต็มตามแพ็กเกจ ${permissions.effectiveTier.value.uppercase()} แล้ว (สูงสุด ${permissions.productLimit() ?: "ไม่จำกัด"} รายการ) กรุณาอัปเกรดเพื่อเพิ่มสินค้า"
     )
     deleting?.let { p ->
         AlertDialog(
@@ -1170,7 +1170,7 @@ private fun WorkforceScreen(
         Column(modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally) {
             Text("แพ็กเกจ Free ใช้งานได้โดยเจ้าของร้านคนเดียว", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Text("อัปเกรดเป็น Basic เพื่อเพิ่มพนักงาน 1 คน หรือ Standard เพื่อเพิ่มพนักงานได้สูงสุด 5 คน")
+            Text("อัปเกรดเป็น Basic เพื่อเพิ่มพนักงานได้สูงสุด 2 คน หรือ Standard ได้สูงสุด 6 คน และ Premium ใช้ได้ไม่จำกัด")
             Button(onClick = onUpgrade) { Text("ดูแพ็กเกจ") }
         }
         return
