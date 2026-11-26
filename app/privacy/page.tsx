@@ -37,7 +37,7 @@ export default function PrivacyPolicyPage() {
           </section>
           <section>
             <h2 className="text-lg font-semibold text-slate-900">8. ติดต่อผู้พัฒนา</h2>
-            <p>ก่อนเผยแพร่แอป ผู้พัฒนาต้องระบุชื่อผู้ให้บริการและช่องทางติดต่อที่ใช้งานได้จริงใน Google Play Store listing และปรับข้อมูลในหน้านี้ให้ตรงกับผู้ให้บริการ</p>
+            <p>หากมีคำถามเกี่ยวกับนโยบายนี้ การใช้ข้อมูล หรือการใช้สิทธิของคุณ ติดต่อผู้ให้บริการ StoreFlow ได้ที่อีเมล <a className="font-semibold text-emerald-700 underline" href="mailto:songponsonma.3340@gmail.com">songponsonma.3340@gmail.com</a></p>
           </section>
         </div>
       </article>
