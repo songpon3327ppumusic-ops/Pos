@@ -166,7 +166,8 @@ data class StoreSubscription(
     @SerialName("plan_id") val planId: String,
     @SerialName("trial_ends_at") val trialEndsAt: String? = null,
     @SerialName("current_period_end") val currentPeriodEnd: String? = null,
-    @SerialName("plan_type") val planType: String = "subscription"
+    @SerialName("plan_type") val planType: String = "subscription",
+    @SerialName("plan_tier") val planTier: String = "basic"
 )
 
 @Serializable
@@ -180,7 +181,31 @@ data class StorePaymentSettings(
     @SerialName("bank_name") val bankName: String? = null,
     @SerialName("bank_account_name") val bankAccountName: String? = null,
     @SerialName("bank_account_number") val bankAccountNumber: String? = null,
-    @SerialName("qr_image_path") val qrImagePath: String? = null
+    @SerialName("qr_image_path") val qrImagePath: String? = null,
+    @SerialName("custom_qr_url") val customQrUrl: String? = null
+)
+
+@Serializable
+data class StoreFlowPlatformSettings(
+    @SerialName("custom_qr_url") val customQrUrl: String? = null,
+    @SerialName("account_name") val accountName: String? = null,
+    @SerialName("account_number") val accountNumber: String? = null,
+    @SerialName("bank_name") val bankName: String? = null,
+    @SerialName("promptpay_name") val promptpayName: String? = null,
+    @SerialName("promptpay_id") val promptpayId: String? = null
+)
+
+@Serializable
+data class StoreFlowPlanPaymentRequest(
+    val id: String,
+    @SerialName("organization_id") val organizationId: String,
+    @SerialName("plan_tier") val planTier: String,
+    @SerialName("billing_interval") val billingInterval: String,
+    @SerialName("amount_thb") val amountThb: Double,
+    val status: String,
+    @SerialName("slip_path") val slipPath: String? = null,
+    @SerialName("transaction_ref") val transactionRef: String? = null,
+    @SerialName("created_at") val createdAt: String
 )
 
 class StoreFlowRepository(private val client: SupabaseClient) {
@@ -315,6 +340,78 @@ class StoreFlowRepository(private val client: SupabaseClient) {
             filter { eq("organization_id", organizationId) }
             limit(1)
         }.decodeList<StorePaymentSettings>().firstOrNull()
+
+
+    suspend fun uploadPlanSlip(requestId: String, bytes: ByteArray): String {
+        require(bytes.isNotEmpty() && bytes.size <= 6 * 1024 * 1024) { "ไฟล์สลิปต้องมีขนาดไม่เกิน 6 MB" }
+        val userId = client.auth.currentUserOrNull()?.id ?: error("กรุณาเข้าสู่ระบบใหม่")
+        val extension = when {
+            bytes.size >= 3 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xD8.toByte() && bytes[2] == 0xFF.toByte() -> "jpg"
+            bytes.size >= 8 && bytes.copyOfRange(0, 8).contentEquals(byteArrayOf(0x89.toByte(),0x50,0x4E,0x47,0x0D,0x0A,0x1A,0x0A)) -> "png"
+            bytes.size >= 12 && String(bytes,0,4,Charsets.US_ASCII)=="RIFF" && String(bytes,8,4,Charsets.US_ASCII)=="WEBP" -> "webp"
+            else -> error("รองรับเฉพาะ JPG, PNG หรือ WebP")
+        }
+        val path = "$userId/$requestId/slip.$extension"
+        val mime = when(extension) { "jpg" -> "image/jpeg"; "png" -> "image/png"; else -> "image/webp" }
+        client.storage.from("storeflow-platform-billing").upload(path, bytes) {
+            contentType = io.ktor.http.ContentType.parse(mime)
+        }
+        return path
+    }
+
+    suspend fun uploadPlatformQr(bytes: ByteArray): String {
+        require(bytes.isNotEmpty() && bytes.size <= 6 * 1024 * 1024) { "ไฟล์ QR ต้องมีขนาดไม่เกิน 6 MB" }
+        val extension = when {
+            bytes.size >= 3 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xD8.toByte() && bytes[2] == 0xFF.toByte() -> "jpg"
+            bytes.size >= 8 && bytes.copyOfRange(0, 8).contentEquals(byteArrayOf(0x89.toByte(),0x50,0x4E,0x47,0x0D,0x0A,0x1A,0x0A)) -> "png"
+            bytes.size >= 12 && String(bytes,0,4,Charsets.US_ASCII)=="RIFF" && String(bytes,8,4,Charsets.US_ASCII)=="WEBP" -> "webp"
+            else -> error("รองรับเฉพาะ JPG, PNG หรือ WebP")
+        }
+        val mime = when(extension) { "jpg" -> "image/jpeg"; "png" -> "image/png"; else -> "image/webp" }
+        val path = "platform/qr/${UUID.randomUUID()}.$extension"
+        client.storage.from("storeflow-platform-billing").upload(path, bytes) {
+            contentType = io.ktor.http.ContentType.parse(mime)
+        }
+        return path
+    }
+
+    suspend fun downloadPlatformFile(path: String): ByteArray =
+        client.storage.from("storeflow-platform-billing").downloadAuthenticated(path)
+
+    suspend fun platformSettings(): StoreFlowPlatformSettings? =
+        client.from("storeflow_platform_settings").select {
+            filter { eq("id", true) }
+            limit(1)
+        }.decodeList<StoreFlowPlatformSettings>().firstOrNull()
+
+    suspend fun savePlatformSettings(settings: StoreFlowPlatformSettings) {
+        client.from("storeflow_platform_settings").upsert(settings) { onConflict = "id" }
+    }
+
+    suspend fun isPlatformAdmin(): Boolean =
+        client.postgrest.rpc("storeflow_is_platform_admin").decodeAs<Boolean>()
+
+    suspend fun submitPlanPayment(
+        organizationId: String, planTier: String, interval: String,
+        amount: Double, slipPath: String, transactionRef: String
+    ): String {
+        val params = buildJsonObject {
+            put("p_organization_id", organizationId)
+            put("p_plan_tier", planTier)
+            put("p_billing_interval", interval)
+            put("p_amount_thb", amount)
+            put("p_slip_path", slipPath)
+            put("p_transaction_ref", transactionRef)
+        }
+        return client.postgrest.rpc("storeflow_submit_plan_payment", params).decodeAs<String>()
+    }
+
+    suspend fun planPaymentRequests(organizationId: String): List<StoreFlowPlanPaymentRequest> =
+        client.from("storeflow_plan_payment_requests").select {
+            filter { eq("organization_id", organizationId) }
+            order("created_at", Order.DESCENDING)
+            limit(30)
+        }.decodeList()
 
     suspend fun saveStorePaymentSettings(settings: StorePaymentSettings) {
         require(client.auth.currentUserOrNull()?.id != null) { "กรุณาเข้าสู่ระบบใหม่" }
