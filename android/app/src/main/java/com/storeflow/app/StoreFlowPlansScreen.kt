@@ -180,6 +180,20 @@ fun StoreFlowPlansScreen(
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = interval == "month", onClick = { interval = "month" }, label = { Text("รายเดือน") })
+                    FilterChip(selected = interval == "year", onClick = { interval = "year" }, label = { Text("รายปี") })
+                }
+                if (interval == "year") Text("ประหยัดเมื่อเลือกรายปี", color = Color(0xFF15803D),
+                    style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
+            }
+        }
+        item {
             Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
                 Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                     Text("แพ็กเกจปัจจุบันจากฐานข้อมูล", fontWeight = FontWeight.SemiBold)
@@ -192,20 +206,6 @@ fun StoreFlowPlansScreen(
                     currentSubscription?.trialEndsAt?.let { Text("ทดลองใช้ถึง: " + formatStoreFlowThaiDateTime(it)) }
                     currentSubscription?.currentPeriodEnd?.let { Text("รอบบิลสิ้นสุด: " + formatStoreFlowThaiDateTime(it)) }
                 }
-            }
-        }
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(selected = interval == "month", onClick = { interval = "month" }, label = { Text("รายเดือน") })
-                    FilterChip(selected = interval == "year", onClick = { interval = "year" }, label = { Text("รายปี") })
-                }
-                if (interval == "year") Text("ประหยัดเมื่อเลือกรายปี", color = Color(0xFF15803D),
-                    style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
             }
         }
         items(storeFlowPlans.size) { index ->
