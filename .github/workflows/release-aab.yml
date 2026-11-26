@@ -60,12 +60,17 @@ jobs:
           echo "SUPABASE_URL=$SUPABASE_URL" >> "$GITHUB_ENV"
           echo "SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY" >> "$GITHUB_ENV"
 
+      - name: Install Android 36 platform and build tools
+        run: yes | sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
 
       - name: Build Release AAB
         working-directory: android
-        run: ./gradlew --no-daemon :app:bundleRelease
+        run: gradle --no-daemon :app:bundleRelease
 
       - name: Upload AAB artifact
         uses: actions/upload-artifact@v4
