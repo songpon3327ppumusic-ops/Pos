@@ -1023,7 +1023,7 @@ private fun PromptPayCheckoutDialog(
             }
         },
         confirmButton = {
-            TextButton(enabled = slipBytes != null && transactionRef.isNotBlank() && !busy,
+            TextButton(enabled = customQrBitmap != null && slipBytes != null && transactionRef.isNotBlank() && !busy,
                 onClick = {
                     val bytes = slipBytes ?: return@TextButton
                     scope.launch {
