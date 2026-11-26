@@ -226,7 +226,7 @@ data class StoreBackupInsert(
     @SerialName("backup_type") val backupType: String,
     @SerialName("file_path") val filePath: String,
     @SerialName("file_size") val fileSize: Long,
-    @SerialName("schema_version") val schemaVersion: Int = 1
+    @SerialName("schema_version") val schemaVersion: Int = 2
 )
 
 class StoreFlowRepository(private val client: SupabaseClient) {
