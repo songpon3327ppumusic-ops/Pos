@@ -31,6 +31,8 @@ android {
         versionName = "1.1.0"
         buildConfigField("String", "SUPABASE_URL", "\"" + setting("SUPABASE_URL") + "\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"" + setting("SUPABASE_ANON_KEY").ifBlank { setting("SUPABASE_PUBLISHABLE_KEY") } + "\"")
+        // Manual bank-transfer subscription checkout is enabled for debug/direct builds only.
+        // Keep false for Google Play releases; use Play Billing for in-app digital subscriptions.
     }
     signingConfigs {
         if (!releaseStoreFile.isNullOrBlank()) {
@@ -44,8 +46,12 @@ android {
         }
     }
     buildTypes {
-        debug { }
+        debug {
+            buildConfigField("boolean", "ALLOW_MANUAL_SUBSCRIPTION_PAYMENT", "true")
+        }
         release {
+            buildConfigField("boolean", "ALLOW_MANUAL_SUBSCRIPTION_PAYMENT",
+                setting("ALLOW_MANUAL_SUBSCRIPTION_PAYMENT").equals("true", ignoreCase = true).toString())
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
