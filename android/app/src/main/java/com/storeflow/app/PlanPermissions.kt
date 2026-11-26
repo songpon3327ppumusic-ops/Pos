@@ -140,3 +140,27 @@ data class PlanPermissions(
         PlanTier.UNKNOWN -> 0
     }
 }
+
+
+@androidx.compose.runtime.Composable
+fun StoreFlowUpgradeDialog(
+    onDismiss: () -> Unit,
+    onUpgrade: () -> Unit,
+    message: String = "ฟีเจอร์นี้ต้องใช้แพ็กเกจที่สูงขึ้น หรือแพ็กเกจปัจจุบันหมดอายุ"
+) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { androidx.compose.material3.Text("อัปเกรดแพ็กเกจ StoreFlow") },
+        text = { androidx.compose.material3.Text("$message\n\nเลือก Basic / Standard / Premium / ซื้อขาด เพื่อเปิดใช้งาน") },
+        confirmButton = {
+            androidx.compose.material3.TextButton(onClick = onUpgrade) {
+                androidx.compose.material3.Text("อัปเกรดแพ็กเกจ")
+            }
+        },
+        dismissButton = {
+            androidx.compose.material3.TextButton(onClick = onDismiss) {
+                androidx.compose.material3.Text("ภายหลัง")
+            }
+        }
+    )
+}
