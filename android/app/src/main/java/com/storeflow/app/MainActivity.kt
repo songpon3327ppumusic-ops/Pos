@@ -1009,6 +1009,8 @@ private fun PromptPayCheckoutDialog(
                     }
                 }
                 Text("ชื่อบัญชี: ${settings?.bankAccountName ?: settings?.promptpayName ?: "-"}")
+                Text("ธนาคาร: ${settings?.bankName ?: "-"}")
+                Text("เลขบัญชี / พร้อมเพย์: ${settings?.bankAccountNumber ?: settings?.promptpayId ?: "-"}")
                 OutlinedButton(onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, enabled = !busy,
                     modifier = Modifier.fillMaxWidth()) { Text(if (slipBytes == null) "แนบรูปสลิปและอ่าน QR" else "เลือกสลิปใหม่") }
                 if (transactionRef.isNotBlank()) {
