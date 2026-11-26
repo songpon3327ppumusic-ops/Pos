@@ -119,6 +119,8 @@ data class EmployeeInsert(
     val position: String? = null,
     val department: String? = null,
     @SerialName("employment_type") val employmentType: String = "permanent",
+    @SerialName("base_salary") val baseSalary: Double = 0.0,
+    @SerialName("wage_rate") val wageRate: Double = 0.0,
     @SerialName("is_active") val isActive: Boolean = true
 )
 
@@ -258,7 +260,9 @@ class StoreFlowRepository(private val client: SupabaseClient) {
         fullName: String,
         position: String,
         department: String,
-        employmentType: String
+        employmentType: String,
+        baseSalary: Double = 0.0,
+        wageRate: Double = 0.0
     ) {
         require(fullName.isNotBlank()) { "กรุณากรอกชื่อพนักงาน" }
         val code = "SF-" + UUID.randomUUID().toString().take(8).uppercase()
@@ -269,7 +273,9 @@ class StoreFlowRepository(private val client: SupabaseClient) {
                 fullName = fullName.trim(),
                 position = position.trim().ifBlank { null },
                 department = department.trim().ifBlank { null },
-                employmentType = employmentType
+                employmentType = employmentType,
+                baseSalary = baseSalary,
+                wageRate = wageRate
             )
         )
     }
