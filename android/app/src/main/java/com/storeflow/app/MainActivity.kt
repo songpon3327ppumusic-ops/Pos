@@ -383,9 +383,32 @@ private fun Workspace() {
         drawerState = drawerState,
         drawerContent = {
             ModalDrawerSheet {
-                Column(Modifier.fillMaxWidth().padding(18.dp)) {
-                    Text("StoreFlow", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    Text(active.name, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Surface(shape = RoundedCornerShape(16.dp), color = Color(0xFFE6F4F1), modifier = Modifier.size(48.dp)) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(active.name.take(1).uppercase(), color = Green, fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.titleLarge)
+                            }
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(active.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                            Text(signedInEmail, style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        AssistChip(onClick = {}, label = { Text(role.uppercase()) }, leadingIcon = {
+                            Icon(Icons.Default.Badge, null, Modifier.size(16.dp))
+                        })
+                        Surface(shape = RoundedCornerShape(50), color = Color(0xFFE8F5E9)) {
+                            Text(permissions.effectiveTier.value.uppercase(),
+                                Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                                color = Color(0xFF18794E), style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold)
+                        }
+                    }
                 }
                 HorizontalDivider()
                 NavigationDrawerItem(
@@ -477,7 +500,8 @@ private fun Workspace() {
                 "plans" -> StoreFlowPlansScreen(Modifier.padding(padding), active.id, repo, subscription, permissions,
                     onSubscriptionChanged = { scope.launch { refresh() } })
                 else -> when (tab) {
-                    0 -> Dashboard(Modifier.padding(padding), active.name, metrics, error, lastUpdated)
+                    0 -> Dashboard(Modifier.padding(padding), active.name, metrics, error, lastUpdated,
+                        onQuickAction = { destination -> tab = destination; extraScreen = "" })
                     1 -> PosScreen(Modifier.padding(padding), active.id, products, repo, role, permissions,
                         onUpgrade = { extraScreen = "plans" },
                         onOpenSettings = { extraScreen = "settings" }) { scope.launch { refresh() } }
@@ -497,7 +521,10 @@ private fun Workspace() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun Dashboard(modifier: Modifier, storeName: String, metrics: StoreMetrics, error: String?, lastUpdated: String) {
+private fun Dashboard(
+    modifier: Modifier, storeName: String, metrics: StoreMetrics, error: String?, lastUpdated: String,
+    onQuickAction: (Int) -> Unit
+) {
     val context = LocalContext.current
     var online by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
@@ -529,6 +556,32 @@ private fun Dashboard(modifier: Modifier, storeName: String, metrics: StoreMetri
             Metric("บิลวันนี้", metrics.todayOrders.toString(), Modifier.weight(1f))
             Metric("สินค้าใกล้หมด", metrics.lowStockCount.toString(), Modifier.weight(1f))
         } }
+        item {
+            Text("ช่องทางลัด", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(
+                    Triple("ขายด่วน", Icons.Default.PointOfSale, 1),
+                    Triple("เพิ่มสินค้า", Icons.Default.AddBox, 2),
+                    Triple("ลงเวลากะ", Icons.Default.AccessTime, 0)
+                ).forEach { action ->
+                    Card(
+                        onClick = { if (action.third == 0) onQuickAction(0) else onQuickAction(action.third) },
+                        modifier = Modifier.weight(1f),
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Column(Modifier.fillMaxWidth().padding(vertical = 14.dp, horizontal = 6.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Icon(action.second, null, tint = Green, modifier = Modifier.size(24.dp))
+                            Text(action.first, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
+            }
+            Text("หมายเหตุ: ปุ่มลงเวลากะเปิดหน้าภาพรวม เนื่องจากต้องเลือกบัญชีพนักงาน/กะที่ถูกต้องก่อนลงเวลา",
+                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         item { LowStockNotificationPrompt(metrics.lowStockCount) }
         error?.let { msg -> item { Text(msg, color = MaterialTheme.colorScheme.error) } }
     }
@@ -556,7 +609,19 @@ private fun ProductsScreen(
     var editing by remember { mutableStateOf<StoreProduct?>(null) }
     var adjusting by remember { mutableStateOf<StoreProduct?>(null) }
     var deleting by remember { mutableStateOf<StoreProduct?>(null) }
+    var search by rememberSaveable { mutableStateOf("") }
+    var stockFilter by rememberSaveable { mutableStateOf("all") }
     val scope = rememberCoroutineScope()
+    val visibleProducts = products.filter { product ->
+        val matchesSearch = search.isBlank() || product.name.contains(search, true) ||
+            product.sku.contains(search, true) || product.barcode.orEmpty().contains(search, true)
+        val matchesStock = when (stockFilter) {
+            "low" -> product.stock > 0 && product.stock <= product.minStock
+            "out" -> product.stock <= 0
+            else -> true
+        }
+        matchesSearch && matchesStock
+    }
     Column(modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         Spacer(Modifier.height(10.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -570,9 +635,22 @@ private fun ProductsScreen(
             }) { Icon(Icons.Default.Add, null); Text("เพิ่ม") }
         }
         Spacer(Modifier.height(10.dp))
+        OutlinedTextField(
+            value = search, onValueChange = { search = it },
+            modifier = Modifier.fillMaxWidth(), singleLine = true,
+            label = { Text("ค้นหาชื่อสินค้า / SKU / บาร์โค้ด") },
+            leadingIcon = { Icon(Icons.Default.Search, null) },
+            trailingIcon = { if (search.isNotBlank()) IconButton(onClick = { search = "" }) { Icon(Icons.Default.Close, "ล้าง") } }
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            listOf("all" to "ทั้งหมด", "low" to "ใกล้หมด", "out" to "หมดสต็อก").forEach { (key, label) ->
+                FilterChip(selected = stockFilter == key, onClick = { stockFilter = key }, label = { Text(label) })
+            }
+        }
         if (products.isEmpty()) EmptyCard("ยังไม่มีสินค้า", "เพิ่มสินค้าเพื่อเริ่มขายและจัดการสต็อก")
+        else if (visibleProducts.isEmpty()) EmptyCard("ไม่พบสินค้า", "ลองเปลี่ยนคำค้นหาหรือตัวกรองสต็อก")
         else LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(products, key = { it.id }) { p ->
+            items(visibleProducts, key = { it.id }) { p ->
                 Card(onClick = { if (canManage) selected = p }, modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(containerColor = Color.White)) {
                     Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -582,7 +660,11 @@ private fun ProductsScreen(
                         }
                         Column(horizontalAlignment = Alignment.End) {
                             Text("คงเหลือ " + qty(p.stock), fontWeight = FontWeight.Bold)
-                            if (p.stock <= p.minStock) Text("ใกล้หมด", color = Color(0xFFB54708))
+                            when {
+                                p.stock <= 0 -> Text("หมดสต็อก", color = Color(0xFFB42318), style = MaterialTheme.typography.labelSmall)
+                                p.stock <= p.minStock -> Text("ใกล้หมด", color = Color(0xFFB54708), style = MaterialTheme.typography.labelSmall)
+                                else -> Text("พร้อมขาย", color = Color(0xFF18794E), style = MaterialTheme.typography.labelSmall)
+                            }
                         }
                     }
                 }
