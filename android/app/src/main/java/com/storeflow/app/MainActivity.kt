@@ -1409,13 +1409,13 @@ private fun WorkforceScreen(
         }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
         LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            if (permissions.canReadFeature(StoreFeature.SHIFTS)) item {
+            if (workforceTab == "shifts" && permissions.canReadFeature(StoreFeature.SHIFTS)) item {
                 Text("ตารางกะวันนี้", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             }
-            if (permissions.canReadFeature(StoreFeature.SHIFTS) && shifts.isEmpty()) item {
+            if (workforceTab == "shifts" && permissions.canReadFeature(StoreFeature.SHIFTS) && shifts.isEmpty()) item {
                 EmptyCard("ยังไม่มีกะงานวันนี้", "เลือกพนักงานแล้วกดจัดกะเพื่อเพิ่มตารางเวลาทำงาน")
             }
-            if (!permissions.canReadFeature(StoreFeature.SHIFTS)) item {
+            if (workforceTab == "shifts" && !permissions.canReadFeature(StoreFeature.SHIFTS)) item {
                 Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
                     Column(Modifier.fillMaxWidth().padding(14.dp)) {
                         Text("กะงานและลงเวลาเข้างาน", fontWeight = FontWeight.SemiBold)
@@ -1424,7 +1424,7 @@ private fun WorkforceScreen(
                     }
                 }
             }
-            if (permissions.canReadFeature(StoreFeature.SHIFTS)) items(shifts, key = { it.id }) { shift ->
+            if (workforceTab == "shifts" && permissions.canReadFeature(StoreFeature.SHIFTS)) items(shifts, key = { it.id }) { shift ->
                 val employee = employees.firstOrNull { it.id == shift.employeeId }
                 Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
                     Column(Modifier.fillMaxWidth().padding(14.dp)) {
@@ -1436,12 +1436,13 @@ private fun WorkforceScreen(
                     }
                 }
             }
-            item {
+            if (workforceTab != "shifts") item {
                 Spacer(Modifier.height(4.dp))
-                Text("พนักงาน", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(if (workforceTab == "payroll") "ข้อมูลค่าจ้างและเงินเดือน" else "พนักงาน",
+                    style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             }
-            if (employees.isEmpty()) item { EmptyCard("ยังไม่มีพนักงาน", "เพิ่มข้อมูลพนักงานเพื่อจัดตารางกะงาน") }
-            items(employees, key = { it.id }) { employee ->
+            if (workforceTab != "shifts" && employees.isEmpty()) item { EmptyCard("ยังไม่มีพนักงาน", "เพิ่มข้อมูลพนักงานเพื่อจัดตารางกะงาน") }
+            if (workforceTab != "shifts") items(employees, key = { it.id }) { employee ->
                 Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
                     Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
@@ -1449,25 +1450,31 @@ private fun WorkforceScreen(
                             Text("${employee.employeeCode} • ${employee.position ?: "พนักงาน"}",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 style = MaterialTheme.typography.bodySmall)
+                            if (workforceTab == "payroll") {
+                                Text("ฐานเงินเดือน ${money(employee.baseSalary)} • ค่าจ้าง ${money(employee.wageRate)}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
                         }
                         if (canManage) {
-                            TextButton(onClick = {
-                                if (permissions.hasFeature(StoreFeature.PAYROLL_AUTO)) salaryFor = employee
-                                else showUpgradeDialog = true
-                            }) { Text(if (permissions.hasFeature(StoreFeature.PAYROLL_AUTO)) "เงินเดือน" else "เงินเดือน 🔒") }
-                            if (permissions.hasFeature(StoreFeature.SHIFTS)) {
+                            if (workforceTab == "payroll") {
+                                TextButton(onClick = {
+                                    if (permissions.hasFeature(StoreFeature.PAYROLL_AUTO)) salaryFor = employee
+                                    else showUpgradeDialog = true
+                                }) { Text(if (permissions.hasFeature(StoreFeature.PAYROLL_AUTO)) "แก้ไขค่าจ้าง" else "เงินเดือน 🔒") }
+                            } else if (permissions.hasFeature(StoreFeature.SHIFTS)) {
                                 TextButton(onClick = { schedulingFor = employee }) { Text("จัดกะ") }
                             }
                         }
                     }
                 }
             }
-            if (permissions.canReadFeature(StoreFeature.ATTENDANCE)) item {
+            if (workforceTab == "shifts" && permissions.canReadFeature(StoreFeature.ATTENDANCE)) item {
                 Spacer(Modifier.height(4.dp))
                 Text("บันทึกเวลาเข้างานวันนี้", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             }
-            if (permissions.canReadFeature(StoreFeature.ATTENDANCE) && attendance.isEmpty()) item { EmptyCard("ยังไม่มีรายการลงเวลา", "เมื่อพนักงานลงเวลา รายการจะแสดงที่นี่") }
-            if (permissions.canReadFeature(StoreFeature.ATTENDANCE)) items(attendance, key = { it.id }) { record ->
+            if (workforceTab == "shifts" && permissions.canReadFeature(StoreFeature.ATTENDANCE) && attendance.isEmpty()) item { EmptyCard("ยังไม่มีรายการลงเวลา", "เมื่อพนักงานลงเวลา รายการจะแสดงที่นี่") }
+            if (workforceTab == "shifts" && permissions.canReadFeature(StoreFeature.ATTENDANCE)) items(attendance, key = { it.id }) { record ->
                 val employee = employees.firstOrNull { it.id == record.employeeId }
                 Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
                     Column(Modifier.padding(14.dp)) {
