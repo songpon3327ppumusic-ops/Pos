@@ -86,22 +86,26 @@ GRANT SELECT ON public.storeflow_platform_settings TO authenticated;
 GRANT SELECT ON public.subscription_plans TO authenticated;
 
 ALTER TABLE public.subscription_plans ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Authenticated users read active subscription plans"
-  ON public.subscription_plans;
-CREATE POLICY "Authenticated users read active subscription plans"
-  ON public.subscription_plans
-  FOR SELECT TO authenticated
-  USING (is_active = true);
+-- Existing subscription_plans_public_read policy already exposes active plans.
 
 ALTER TABLE public.storeflow_platform_settings ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS storeflow_platform_settings_authenticated_read ON public.storeflow_platform_settings;
 CREATE POLICY storeflow_platform_settings_authenticated_read
  ON public.storeflow_platform_settings FOR SELECT TO authenticated USING(true);
 DROP POLICY IF EXISTS storeflow_platform_settings_admin_write ON public.storeflow_platform_settings;
-CREATE POLICY storeflow_platform_settings_admin_write
- ON public.storeflow_platform_settings FOR ALL TO authenticated
- USING(coalesce(auth.jwt()->'app_metadata'->>'role','')='platform_admin')
- WITH CHECK(coalesce(auth.jwt()->'app_metadata'->>'role','')='platform_admin');
+DROP POLICY IF EXISTS storeflow_platform_settings_admin_insert ON public.storeflow_platform_settings;
+DROP POLICY IF EXISTS storeflow_platform_settings_admin_update ON public.storeflow_platform_settings;
+DROP POLICY IF EXISTS storeflow_platform_settings_admin_delete ON public.storeflow_platform_settings;
+CREATE POLICY storeflow_platform_settings_admin_insert
+ ON public.storeflow_platform_settings FOR INSERT TO authenticated
+ WITH CHECK(coalesce((select auth.jwt())->'app_metadata'->>'role','')='platform_admin');
+CREATE POLICY storeflow_platform_settings_admin_update
+ ON public.storeflow_platform_settings FOR UPDATE TO authenticated
+ USING(coalesce((select auth.jwt())->'app_metadata'->>'role','')='platform_admin')
+ WITH CHECK(coalesce((select auth.jwt())->'app_metadata'->>'role','')='platform_admin');
+CREATE POLICY storeflow_platform_settings_admin_delete
+ ON public.storeflow_platform_settings FOR DELETE TO authenticated
+ USING(coalesce((select auth.jwt())->'app_metadata'->>'role','')='platform_admin');
 
 CREATE TABLE IF NOT EXISTS public.storeflow_plan_payment_requests (
  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -121,29 +125,37 @@ ALTER TABLE public.storeflow_plan_payment_requests
  ADD COLUMN IF NOT EXISTS previous_subscription_status text;
 CREATE INDEX IF NOT EXISTS storeflow_plan_payment_requests_org_created_idx
  ON public.storeflow_plan_payment_requests(organization_id,created_at DESC);
+CREATE INDEX IF NOT EXISTS storeflow_plan_payment_requests_requested_by_idx
+ ON public.storeflow_plan_payment_requests(requested_by);
+CREATE INDEX IF NOT EXISTS storeflow_plan_payment_requests_reviewed_by_idx
+ ON public.storeflow_plan_payment_requests(reviewed_by);
 CREATE UNIQUE INDEX IF NOT EXISTS storeflow_plan_payment_requests_transaction_ref_uidx
  ON public.storeflow_plan_payment_requests(transaction_ref)
  WHERE transaction_ref IS NOT NULL AND btrim(transaction_ref)<>'';
 ALTER TABLE public.storeflow_plan_payment_requests ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS storeflow_plan_payment_requests_member_read ON public.storeflow_plan_payment_requests;
-CREATE POLICY storeflow_plan_payment_requests_member_read ON public.storeflow_plan_payment_requests
- FOR SELECT TO authenticated USING(EXISTS(
-  SELECT 1 FROM public.organization_members m WHERE m.organization_id=storeflow_plan_payment_requests.organization_id
-   AND m.user_id=auth.uid() AND m.is_active AND m.membership_status='active'));
 DROP POLICY IF EXISTS storeflow_plan_payment_requests_owner_insert ON public.storeflow_plan_payment_requests;
+DROP POLICY IF EXISTS storeflow_plan_payment_requests_platform_admin_read ON public.storeflow_plan_payment_requests;
+CREATE POLICY storeflow_plan_payment_requests_member_read ON public.storeflow_plan_payment_requests
+ FOR SELECT TO authenticated USING(
+  EXISTS(SELECT 1 FROM public.organization_members m
+   WHERE m.organization_id=storeflow_plan_payment_requests.organization_id
+    AND m.user_id=(select auth.uid()) AND m.is_active AND m.membership_status='active')
+  OR coalesce((select auth.jwt())->'app_metadata'->>'role','')='platform_admin');
 CREATE POLICY storeflow_plan_payment_requests_owner_insert ON public.storeflow_plan_payment_requests
- FOR INSERT TO authenticated WITH CHECK(requested_by=auth.uid() AND status='pending_payment' AND EXISTS(
-  SELECT 1 FROM public.organization_members m WHERE m.organization_id=storeflow_plan_payment_requests.organization_id
-   AND m.user_id=auth.uid() AND m.is_active AND m.membership_status='active' AND m.role IN ('owner','admin')));
+ FOR INSERT TO authenticated WITH CHECK(
+  requested_by=(select auth.uid()) AND status='pending_payment' AND EXISTS(
+   SELECT 1 FROM public.organization_members m
+   WHERE m.organization_id=storeflow_plan_payment_requests.organization_id
+    AND m.user_id=(select auth.uid()) AND m.is_active AND m.membership_status='active'
+    AND m.role IN ('owner','admin')));
 CREATE OR REPLACE FUNCTION public.storeflow_is_platform_admin()
 RETURNS boolean LANGUAGE sql STABLE SECURITY INVOKER SET search_path=''
 AS $ SELECT coalesce(auth.jwt()->'app_metadata'->>'role','')='platform_admin'; $;
 REVOKE ALL ON FUNCTION public.storeflow_is_platform_admin() FROM PUBLIC,anon;
 GRANT EXECUTE ON FUNCTION public.storeflow_is_platform_admin() TO authenticated;
 
-DROP POLICY IF EXISTS storeflow_plan_payment_requests_platform_admin_read ON public.storeflow_plan_payment_requests;
-CREATE POLICY storeflow_plan_payment_requests_platform_admin_read ON public.storeflow_plan_payment_requests
- FOR SELECT TO authenticated USING(public.storeflow_is_platform_admin());
+
 
 
 CREATE OR REPLACE FUNCTION private.has_active_store_license(p_org uuid)
