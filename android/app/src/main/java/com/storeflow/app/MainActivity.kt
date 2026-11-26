@@ -1434,8 +1434,8 @@ private fun WorkforceScreen(
 
     if (addingEmployee) EmployeeDialog(
         onDismiss = { addingEmployee = false },
-        onSave = { name, position, department, type ->
-            repo.addEmployee(organizationId, name, position, department, type)
+        onSave = { name, position, department, type, baseSalary, wageRate ->
+            repo.addEmployee(organizationId, name, position, department, type, baseSalary, wageRate)
             addingEmployee = false
             refresh()
         }
@@ -1579,13 +1579,15 @@ private fun SalaryDialog(
 @Composable
 private fun EmployeeDialog(
     onDismiss: () -> Unit,
-    onSave: suspend (String, String, String, String) -> Unit
+    onSave: suspend (String, String, String, String, Double, Double) -> Unit
 ) {
     val scope = rememberCoroutineScope()
     var name by remember { mutableStateOf("") }
     var position by remember { mutableStateOf("") }
     var department by remember { mutableStateOf("") }
     var type by remember { mutableStateOf("permanent") }
+    var baseSalary by remember { mutableStateOf("0") }
+    var wageRate by remember { mutableStateOf("0") }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     AlertDialog(
@@ -1596,6 +1598,10 @@ private fun EmployeeDialog(
                 OutlinedTextField(name, { name = it }, label = { Text("ชื่อ-นามสกุล") }, singleLine = true)
                 OutlinedTextField(position, { position = it }, label = { Text("ตำแหน่ง") }, singleLine = true)
                 OutlinedTextField(department, { department = it }, label = { Text("แผนก") }, singleLine = true)
+                OutlinedTextField(baseSalary, { baseSalary = it }, label = { Text("ฐานเงินเดือน / เดือน (บาท)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), singleLine = true)
+                OutlinedTextField(wageRate, { wageRate = it }, label = { Text("ค่าจ้างรายวัน/ชั่วโมง (บาท)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), singleLine = true)
                 Text("ประเภทการจ้าง")
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     listOf("permanent" to "ประจำ", "part_time" to "พาร์ตไทม์", "daily" to "รายวัน").forEach { option ->
@@ -1607,10 +1613,13 @@ private fun EmployeeDialog(
         },
         confirmButton = {
             TextButton(enabled = !busy, onClick = {
+                val salary = baseSalary.toDoubleOrNull()
+                val wage = wageRate.toDoubleOrNull()
                 if (name.isBlank()) error = "กรุณากรอกชื่อพนักงาน"
+                else if (salary == null || salary < 0 || wage == null || wage < 0) error = "กรุณากรอกฐานเงินเดือนและค่าจ้างเป็นตัวเลขตั้งแต่ 0 ขึ้นไป"
                 else scope.launch {
                     busy = true
-                    try { onSave(name, position, department, type) }
+                    try { onSave(name, position, department, type, salary, wage) }
                     catch (e: Exception) { error = e.message ?: "เพิ่มพนักงานไม่สำเร็จ" }
                     finally { busy = false }
                 }
