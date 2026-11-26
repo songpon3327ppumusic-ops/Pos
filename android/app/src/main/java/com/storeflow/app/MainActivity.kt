@@ -398,7 +398,7 @@ private fun Workspace() {
                     label = { Text("เอกสาร") }, icon = { Icon(Icons.Default.Description, null) },
                     selected = extraScreen == "documents",
                     onClick = {
-                        if (permissions.hasFeature(StoreFeature.TAX_DOCUMENTS)) extraScreen = "documents"
+                        if (permissions.isExpired || permissions.hasFeature(StoreFeature.TAX_DOCUMENTS)) extraScreen = "documents"
                         else showUpgradeDialog = true
                         scope.launch { drawerState.close() }
                     }
@@ -465,7 +465,7 @@ private fun Workspace() {
                 "workforce" -> WorkforceScreen(Modifier.padding(padding), active.id, repo,
                     role in listOf("owner", "admin", "hr"), permissions,
                     onUpgrade = { extraScreen = "plans" })
-                "documents" -> DocumentsScreen(Modifier.padding(padding), active.id, DocumentsRepository(client))
+                "documents" -> DocumentsScreen(Modifier.padding(padding), active.id, DocumentsRepository(client), readOnly = permissions.isExpired)
                 "settings" -> SettingsScreen(Modifier.padding(padding), active, role,
                     client.auth.currentUserOrNull()?.email.orEmpty(), repo, permissions,
                     onUpgrade = { extraScreen = "plans" },
@@ -1139,8 +1139,8 @@ private fun WorkforceScreen(
             val data = withContext(Dispatchers.IO) {
                 Triple(
                     repo.employees(organizationId),
-                    if (permissions.hasFeature(StoreFeature.SHIFTS)) repo.shifts(organizationId, today) else emptyList(),
-                    if (permissions.hasFeature(StoreFeature.ATTENDANCE)) repo.attendanceToday(organizationId, today) else emptyList()
+                    if (permissions.canReadFeature(StoreFeature.SHIFTS)) repo.shifts(organizationId, today) else emptyList(),
+                    if (permissions.canReadFeature(StoreFeature.ATTENDANCE)) repo.attendanceToday(organizationId, today) else emptyList()
                 )
             }
             employees = data.first
@@ -1161,7 +1161,7 @@ private fun WorkforceScreen(
         return
     }
     if (!canManage) {
-        if (!permissions.hasFeature(StoreFeature.ATTENDANCE)) {
+        if (!permissions.canReadFeature(StoreFeature.ATTENDANCE)) {
             Column(modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("การลงเวลาเข้างาน", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
@@ -1199,7 +1199,8 @@ private fun WorkforceScreen(
                 }
             },
             busy = busy,
-            error = error
+            error = error,
+            canWriteAttendance = permissions.hasFeature(StoreFeature.ATTENDANCE)
         )
         return
     }
@@ -1228,13 +1229,13 @@ private fun WorkforceScreen(
         }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
         LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            if (permissions.hasFeature(StoreFeature.SHIFTS)) item {
+            if (permissions.canReadFeature(StoreFeature.SHIFTS)) item {
                 Text("ตารางกะวันนี้", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             }
-            if (permissions.hasFeature(StoreFeature.SHIFTS) && shifts.isEmpty()) item {
+            if (permissions.canReadFeature(StoreFeature.SHIFTS) && shifts.isEmpty()) item {
                 EmptyCard("ยังไม่มีกะงานวันนี้", "เลือกพนักงานแล้วกดจัดกะเพื่อเพิ่มตารางเวลาทำงาน")
             }
-            if (!permissions.hasFeature(StoreFeature.SHIFTS)) item {
+            if (!permissions.canReadFeature(StoreFeature.SHIFTS)) item {
                 Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
                     Column(Modifier.fillMaxWidth().padding(14.dp)) {
                         Text("กะงานและลงเวลาเข้างาน", fontWeight = FontWeight.SemiBold)
@@ -1243,7 +1244,7 @@ private fun WorkforceScreen(
                     }
                 }
             }
-            if (permissions.hasFeature(StoreFeature.SHIFTS)) items(shifts, key = { it.id }) { shift ->
+            if (permissions.canReadFeature(StoreFeature.SHIFTS)) items(shifts, key = { it.id }) { shift ->
                 val employee = employees.firstOrNull { it.id == shift.employeeId }
                 Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
                     Column(Modifier.fillMaxWidth().padding(14.dp)) {
@@ -1281,12 +1282,12 @@ private fun WorkforceScreen(
                     }
                 }
             }
-            if (permissions.hasFeature(StoreFeature.ATTENDANCE)) item {
+            if (permissions.canReadFeature(StoreFeature.ATTENDANCE)) item {
                 Spacer(Modifier.height(4.dp))
                 Text("บันทึกเวลาเข้างานวันนี้", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             }
-            if (permissions.hasFeature(StoreFeature.ATTENDANCE) && attendance.isEmpty()) item { EmptyCard("ยังไม่มีรายการลงเวลา", "เมื่อพนักงานลงเวลา รายการจะแสดงที่นี่") }
-            if (permissions.hasFeature(StoreFeature.ATTENDANCE)) items(attendance, key = { it.id }) { record ->
+            if (permissions.canReadFeature(StoreFeature.ATTENDANCE) && attendance.isEmpty()) item { EmptyCard("ยังไม่มีรายการลงเวลา", "เมื่อพนักงานลงเวลา รายการจะแสดงที่นี่") }
+            if (permissions.canReadFeature(StoreFeature.ATTENDANCE)) items(attendance, key = { it.id }) { record ->
                 val employee = employees.firstOrNull { it.id == record.employeeId }
                 Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
                     Column(Modifier.padding(14.dp)) {
@@ -1347,7 +1348,8 @@ private fun SelfAttendanceScreen(
     onClockIn: (String) -> Unit,
     onClockOut: () -> Unit,
     busy: Boolean,
-    error: String?
+    error: String?,
+    canWriteAttendance: Boolean
 ) {
     val shift = employee?.let { person -> shifts.firstOrNull { it.employeeId == person.id } }
     Column(modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -1375,16 +1377,17 @@ private fun SelfAttendanceScreen(
             if (attendance?.clockIn == null) {
                 Button(
                     onClick = { shift?.let { onClockIn(it.id) } },
-                    enabled = shift != null && !busy,
+                    enabled = shift != null && !busy && canWriteAttendance,
                     modifier = Modifier.fillMaxWidth()
                 ) { Text(if (busy) "กำลังบันทึก..." else "ลงเวลาเข้างาน") }
             } else if (attendance.clockOut == null) {
-                Button(onClick = onClockOut, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                Button(onClick = onClockOut, enabled = !busy && canWriteAttendance, modifier = Modifier.fillMaxWidth()) {
                     Text(if (busy) "กำลังบันทึก..." else "ลงเวลาออกงาน")
                 }
             } else {
                 Text("ลงเวลาครบแล้วสำหรับวันนี้", color = Color(0xFF027A48), fontWeight = FontWeight.SemiBold)
             }
+            if (!canWriteAttendance) Text("แพ็กเกจหมดอายุ: ดูประวัติได้ แต่ลงเวลาใหม่ไม่ได้", color = MaterialTheme.colorScheme.error)
         }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
     }
@@ -1735,7 +1738,7 @@ private fun SettingsScreen(
                         if (merchantQrBitmap != null) Text("QR นี้จะแสดงให้ลูกค้าในหน้าชำระเงิน POS", color = MaterialTheme.colorScheme.primary)
                     }
                     if (canManage) Button(
-                        enabled = !busy,
+                        enabled = !busy && !permissions.isExpired,
                         onClick = {
                             scope.launch {
                                 busy = true; error = null; message = null
