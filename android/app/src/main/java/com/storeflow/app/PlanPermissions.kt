@@ -69,7 +69,7 @@ data class PlanPermissions(
         get() = userEmail.equals(SUPER_ADMIN_EMAIL, ignoreCase = true)
 
     val isLifetime: Boolean
-        get() = isSuperAdmin || planTier == PlanTier.LIFETIME
+        get() = isSuperAdmin || (planTier == PlanTier.LIFETIME && planStatus == PlanStatus.ACTIVE)
 
     val isTrialActive: Boolean
         get() = planStatus in setOf(PlanStatus.TRIAL, PlanStatus.TRIALING) &&
