@@ -49,7 +49,7 @@ private fun documentTitle(type: String): String = when (type) {
 }
 
 @Composable
-fun DocumentsScreen(modifier: Modifier, organizationId: String, repository: DocumentsRepository, readOnly: Boolean = false) {
+fun DocumentsScreen(modifier: Modifier, organizationId: String, repository: DocumentsRepository, readOnly: Boolean = false, allowTaxDocuments: Boolean = true) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var documents by remember { mutableStateOf(emptyList<BusinessDocument>()) }
@@ -114,6 +114,7 @@ fun DocumentsScreen(modifier: Modifier, organizationId: String, repository: Docu
         }
     }
     if (creating && !readOnly) DocumentForm(
+        allowTaxDocuments = allowTaxDocuments,
         onDismiss = { creating = false },
         onSave = { type, party, taxId, address, due, description, qty, price, mode, notes, income, whRate ->
             scope.launch {
@@ -164,17 +165,19 @@ fun DocumentsScreen(modifier: Modifier, organizationId: String, repository: Docu
 
 @Composable
 private fun DocumentForm(
+    allowTaxDocuments: Boolean,
     onDismiss: () -> Unit,
     onSave: (String,String,String,String,String?,String,Double,Double,String,String,String,Double) -> Unit
 ) {
-    var type by remember { mutableStateOf("tax_invoice") }
+    var type by remember { mutableStateOf(if (allowTaxDocuments) "tax_invoice" else "invoice") }
     var party by remember { mutableStateOf("") }; var taxId by remember { mutableStateOf("") }
     var address by remember { mutableStateOf("") }; var due by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }; var qty by remember { mutableStateOf("1") }
     var price by remember { mutableStateOf("0") }; var mode by remember { mutableStateOf("exclude") }
     var notes by remember { mutableStateOf("") }; var income by remember { mutableStateOf("ค่าบริการ") }
     var whRate by remember { mutableStateOf("3") }; var error by remember { mutableStateOf<String?>(null) }
-    val types = listOf("tax_invoice","abbreviated_tax_invoice","quotation","invoice","billing_note","delivery_note","goods_receipt","withholding_certificate")
+    val allTypes = listOf("tax_invoice","abbreviated_tax_invoice","quotation","invoice","billing_note","delivery_note","goods_receipt","withholding_certificate")
+    val types = if (allowTaxDocuments) allTypes else allTypes.filterNot { it in setOf("tax_invoice","withholding_certificate") }
     AlertDialog(
         onDismissRequest = onDismiss, title = { Text("สร้างเอกสาร") },
         text = {
