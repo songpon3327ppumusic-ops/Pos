@@ -161,8 +161,8 @@ data class PlanPermissions(
     }
 
     fun productLimit(): Int? = when (effectiveTier) {
-        PlanTier.FREE -> 20
-        PlanTier.BASIC -> 50
+        PlanTier.FREE -> 30
+        PlanTier.BASIC -> 250
         PlanTier.STANDARD, PlanTier.PREMIUM, PlanTier.LIFETIME -> null
         PlanTier.UNKNOWN -> 0
     }
@@ -170,7 +170,7 @@ data class PlanPermissions(
     fun employeeLimit(): Int? = when (effectiveTier) {
         PlanTier.FREE -> 0
         PlanTier.BASIC -> 1
-        PlanTier.STANDARD -> 5
+        PlanTier.STANDARD -> 6
         PlanTier.PREMIUM, PlanTier.LIFETIME -> null
         PlanTier.UNKNOWN -> 0
     }
