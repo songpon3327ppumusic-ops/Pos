@@ -85,15 +85,21 @@ jobs:
           retention-days: 14
 
       - name: Decode Android signing keystore
+        id: signing
         if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/feature/android-native-storeflow') || (github.event_name == 'workflow_dispatch' && inputs.build_release) }}
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
-          test -n "$ANDROID_KEYSTORE_BASE64" || (echo "Missing ANDROID_KEYSTORE_BASE64 secret" && exit 1)
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "Release signing is not configured; debug APK will still be available."
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/storeflow-release.jks"
+          echo "available=true" >> "$GITHUB_OUTPUT"
 
-      - name: Build signed Release AAB
-        if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/feature/android-native-storeflow') || (github.event_name == 'workflow_dispatch' && inputs.build_release) }}
+      - name: Build signed Release APK and AAB
+        if: ${{ steps.signing.outputs.available == 'true' && ((github.event_name == 'push' && github.ref == 'refs/heads/feature/android-native-storeflow') || (github.event_name == 'workflow_dispatch' && inputs.build_release)) }}
         working-directory: android
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -105,10 +111,19 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           test -n "$ANDROID_KEYSTORE_PASSWORD" && test -n "$ANDROID_KEY_ALIAS" && test -n "$ANDROID_KEY_PASSWORD"
-          ./gradlew --no-daemon bundleRelease
+          ./gradlew --no-daemon assembleRelease bundleRelease
+
+      - name: Upload signed Release APK
+        if: ${{ steps.signing.outputs.available == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: storeflow-release-apk
+          path: android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Upload Release AAB
-        if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/feature/android-native-storeflow') || (github.event_name == 'workflow_dispatch' && inputs.build_release) }}
+        if: ${{ steps.signing.outputs.available == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: storeflow-release-aab
