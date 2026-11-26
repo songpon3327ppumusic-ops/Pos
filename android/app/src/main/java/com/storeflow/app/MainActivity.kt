@@ -1858,25 +1858,25 @@ private fun ReportsScreen(
                 val csv = buildString {
                     append('\uFEFF')
                     appendLine("รายการ,ค่า")
-                    appendLine("\${csvCell("ช่วงเวลา")},\${csvCell(periodLabel)}")
-                    appendLine("\${csvCell("วันที่เริ่มต้น")},\${csvCell(fromDate.toString())}")
-                    appendLine("\${csvCell("วันที่สิ้นสุด")},\${csvCell(today.toString())}")
-                    appendLine("\${csvCell("ยอดขายรวม")},\${csvCell(total.toString())}")
-                    appendLine("\${csvCell("เงินสด")},\${csvCell(cashTotal.toString())}")
-                    appendLine("\${csvCell("QR / โอนเงิน")},\${csvCell(qrTotal.toString())}")
-                    appendLine("\${csvCell("ช่องทางอื่นๆ")},\${csvCell(otherTotal.toString())}")
-                    appendLine("\${csvCell("ยอดรวมตรวจสอบ")},\${csvCell(reconciledTotal.toString())}")
-                    appendLine("\${csvCell("จำนวนบิล")},\${csvCell(sales.size.toString())}")
+                    appendLine("${csvCell("ช่วงเวลา")},${csvCell(periodLabel)}")
+                    appendLine("${csvCell("วันที่เริ่มต้น")},${csvCell(fromDate.toString())}")
+                    appendLine("${csvCell("วันที่สิ้นสุด")},${csvCell(today.toString())}")
+                    appendLine("${csvCell("ยอดขายรวม")},${csvCell(total.toString())}")
+                    appendLine("${csvCell("เงินสด")},${csvCell(cashTotal.toString())}")
+                    appendLine("${csvCell("QR / โอนเงิน")},${csvCell(qrTotal.toString())}")
+                    appendLine("${csvCell("ช่องทางอื่นๆ")},${csvCell(otherTotal.toString())}")
+                    appendLine("${csvCell("ยอดรวมตรวจสอบ")},${csvCell(reconciledTotal.toString())}")
+                    appendLine("${csvCell("จำนวนบิล")},${csvCell(sales.size.toString())}")
                     appendLine()
                     appendLine("ช่องทางอื่น,ยอดเงิน,จำนวนบิล")
                     otherBreakdown.forEach { channel ->
                         appendLine(
-                            "\${csvCell(channel.name)},\${csvCell(channel.total.toString())},\${channel.bills}"
+                            "${csvCell(channel.name)},${csvCell(channel.total.toString())},${channel.bills}"
                         )
                     }
                     appendLine()
-                    appendLine("\${csvCell("สินค้าในระบบ")},\${products.size}")
-                    appendLine("\${csvCell("สินค้าใกล้หมด")},\${products.count { it.stock <= it.minStock }}")
+                    appendLine("${csvCell("สินค้าในระบบ")},${products.size}")
+                    appendLine("${csvCell("สินค้าใกล้หมด")},${products.count { it.stock <= it.minStock }}")
                 }
                 context.contentResolver.openOutputStream(uri)?.bufferedWriter(Charsets.UTF_8)?.use {
                     it.write(csv)
@@ -1904,21 +1904,21 @@ private fun ReportsScreen(
                     add("ช่วงเวลา: $periodLabel")
                     add("ตั้งแต่วันที่: $fromDate")
                     add("ถึงวันที่: $today")
-                    add("ยอดขายรวม: \${money(total)}")
-                    add("เงินสด: \${money(cashTotal)} (\${cashSales.size} บิล)")
-                    add("QR / โอนเงิน: \${money(qrTotal)} (\${qrSales.size} บิล)")
-                    add("ช่องทางอื่นๆ: \${money(otherTotal)} (\${otherSales.size} บิล)")
-                    add("ยอดรวมตรวจสอบ: \${money(reconciledTotal)}")
-                    add("จำนวนบิลทั้งหมด: \${sales.size}")
+                    add("ยอดขายรวม: ${money(total)}")
+                    add("เงินสด: ${money(cashTotal)} (${cashSales.size} บิล)")
+                    add("QR / โอนเงิน: ${money(qrTotal)} (${qrSales.size} บิล)")
+                    add("ช่องทางอื่นๆ: ${money(otherTotal)} (${otherSales.size} บิล)")
+                    add("ยอดรวมตรวจสอบ: ${money(reconciledTotal)}")
+                    add("จำนวนบิลทั้งหมด: ${sales.size}")
                     add("")
                     add("รายละเอียดช่องทางอื่นๆ")
                     if (otherBreakdown.isEmpty()) add("- ไม่มีรายการ")
                     else otherBreakdown.forEach {
-                        add("\${it.name}: \${money(it.total)} (\${it.bills} บิล)")
+                        add("${it.name}: ${money(it.total)} (${it.bills} บิล)")
                     }
                     add("")
-                    add("สินค้าในระบบ: \${products.size}")
-                    add("สินค้าใกล้หมด: \${products.count { it.stock <= it.minStock }}")
+                    add("สินค้าในระบบ: ${products.size}")
+                    add("สินค้าใกล้หมด: ${products.count { it.stock <= it.minStock }}")
                     add("")
                     add("สร้างรายงานจาก StoreFlow Android")
                 }
@@ -2031,7 +2031,7 @@ private fun ReportsScreen(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                                 Text(
-                                    "\${money(channel.total)} • \${channel.bills} บิล",
+                                    "${money(channel.total)} • ${channel.bills} บิล",
                                     style = MaterialTheme.typography.bodySmall
                                 )
                             }
