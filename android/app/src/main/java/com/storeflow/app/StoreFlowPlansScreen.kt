@@ -93,7 +93,7 @@ fun StoreFlowPlansScreen(
             }.getOrNull()
         }
         requests = repository.planPaymentRequests(organizationId)
-        platformAdmin = repository.isPlatformAdmin()
+        platformAdmin = permissions.isSuperAdmin || repository.isPlatformAdmin()
         adminRequests = if (platformAdmin) repository.allPendingPlanPaymentRequests() else emptyList()
         adminSlipImages = if (platformAdmin) adminRequests.mapNotNull { request ->
             val path = request.slipPath ?: return@mapNotNull null
@@ -183,7 +183,11 @@ fun StoreFlowPlansScreen(
             Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
                 Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                     Text("แพ็กเกจปัจจุบันจากฐานข้อมูล", fontWeight = FontWeight.SemiBold)
-                    Text(currentTier.uppercase(), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text(
+                        if (permissions.isLifetime) "ซื้อขาดตลอดชีพ (Lifetime)" else currentTier.uppercase(),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
                     Text("สถานะ: $statusLabel")
                     currentSubscription?.trialEndsAt?.let { Text("ทดลองใช้ถึง: " + formatStoreFlowThaiDateTime(it)) }
                     currentSubscription?.currentPeriodEnd?.let { Text("รอบบิลสิ้นสุด: " + formatStoreFlowThaiDateTime(it)) }
@@ -231,7 +235,17 @@ fun StoreFlowPlansScreen(
                         Text("฿0 • ตลอดชีพ", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                     } else if (plan.tier == "lifetime") {
                         Text("฿2,590 จ่ายครั้งเดียว", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                        Text("ราคาปกติ ฿3,990 • ประหยัด ฿1,400")
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "฿3,990",
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough
+                                ),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text("ประหยัด ฿1,400", color = Color(0xFF15803D), style = MaterialTheme.typography.labelSmall)
+                        }
                     } else {
                         Text("฿" + amountForPlan(plan, livePlans, interval) + " / " +
                             if (interval == "year") "ปี" else "เดือน",
@@ -276,35 +290,6 @@ fun StoreFlowPlansScreen(
                 }
             }
         }
-        if (selectedTier == "free") item {
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
-                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("เริ่มใช้งานแพ็กเกจ Free", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text("ฟรีตลอดชีพ • สินค้า 30 รายการ • เจ้าของร้านใช้งานคนเดียว • QR รับเงินและ POS ใช้งานได้")
-                    Button(
-                        enabled = !busy && currentTier !in setOf("free", "lifetime"),
-                        onClick = {
-                            scope.launch {
-                                busy = true; error = null; message = null
-                                try {
-                                    repository.selectFreePlan(organizationId)
-                                    message = "เปลี่ยนเป็นแพ็กเกจ Free เรียบร้อย"
-                                    onSubscriptionChanged()
-                                } catch (e: Exception) {
-                                    error = e.message ?: "เปลี่ยนแพ็กเกจ Free ไม่สำเร็จ"
-                                } finally { busy = false }
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) { Text(when {
-                        busy -> "กำลังเปลี่ยนแพ็กเกจ..."
-                        currentTier == "free" -> "ใช้งานแพ็กเกจนี้อยู่"
-                        currentTier == "lifetime" -> "ร้านนี้ใช้สิทธิ์ Lifetime อยู่แล้ว"
-                        else -> "ใช้แพ็กเกจ Free"
-                    }) }
-                }
-            }
-        }
         if (requests.isNotEmpty()) item {
             Text("ประวัติคำขอชำระเงิน", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         }
@@ -328,7 +313,7 @@ fun StoreFlowPlansScreen(
                         Text(request.planTier.uppercase() + " • ฿" + request.amountThb.toInt(),
                             fontWeight = FontWeight.SemiBold)
                         Text("ร้าน: " + request.organizationId.take(8) + "…")
-                        Text("เลขอ้างอิง: " + (request.transactionRef ?: "-"))
+                        Text("เลขอ้างอิง: " + (request.transactionRef?.takeIf { it.isNotBlank() } ?: "ไม่พบเลขอ้างอิง"))
                         adminSlipImages[request.id]?.let { slip ->
                             Image(slip.asImageBitmap(), contentDescription = "สลิปชำระแพ็กเกจ",
                                 modifier = Modifier.fillMaxWidth().height(180.dp))
