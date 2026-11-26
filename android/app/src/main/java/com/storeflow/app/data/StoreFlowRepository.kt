@@ -209,6 +209,26 @@ data class StoreFlowPlanPaymentRequest(
     @SerialName("created_at") val createdAt: String
 )
 
+@Serializable
+data class StoreBackup(
+    val id: String,
+    @SerialName("organization_id") val organizationId: String,
+    @SerialName("backup_type") val backupType: String,
+    @SerialName("file_path") val filePath: String,
+    @SerialName("file_size") val fileSize: Long,
+    @SerialName("schema_version") val schemaVersion: Int,
+    @SerialName("created_at") val createdAt: String
+)
+
+@Serializable
+data class StoreBackupInsert(
+    @SerialName("organization_id") val organizationId: String,
+    @SerialName("backup_type") val backupType: String,
+    @SerialName("file_path") val filePath: String,
+    @SerialName("file_size") val fileSize: Long,
+    @SerialName("schema_version") val schemaVersion: Int = 1
+)
+
 class StoreFlowRepository(private val client: SupabaseClient) {
 
     suspend fun employees(organizationId: String): List<StoreEmployee> =
@@ -472,16 +492,52 @@ class StoreFlowRepository(private val client: SupabaseClient) {
 
     suspend fun exportStoreBackup(organizationId: String): String {
         val params = buildJsonObject { put("p_organization_id", organizationId) }
-        return client.postgrest.rpc("storeflow_export_json", params).decodeAs<JsonElement>().toString()
+        return client.postgrest.rpc("storeflow_export_backup_v2", params).decodeAs<JsonElement>().toString()
     }
 
-    suspend fun importStoreBackup(organizationId: String, jsonText: String): String {
+    suspend fun importStoreBackup(organizationId: String, jsonText: String): String =
+        restoreStoreBackup(organizationId, jsonText, "merge")
+
+    suspend fun restoreStoreBackup(organizationId: String, jsonText: String, mode: String): String {
+        require(mode in setOf("merge", "replace")) { "รูปแบบการกู้คืนไม่ถูกต้อง" }
         val backup = Json.parseToJsonElement(jsonText)
         val params = buildJsonObject {
             put("p_organization_id", organizationId)
             put("p_backup", backup)
+            put("p_mode", mode)
         }
-        return client.postgrest.rpc("storeflow_import_json", params).decodeAs<JsonElement>().toString()
+        return client.postgrest.rpc("storeflow_restore_backup_v2", params).decodeAs<JsonElement>().toString()
+    }
+
+    suspend fun createCloudSnapshot(organizationId: String, backupType: String): StoreBackup {
+        require(backupType in setOf("manual", "automatic")) { "ประเภทข้อมูลสำรองไม่ถูกต้อง" }
+        val json = exportStoreBackup(organizationId)
+        val bytes = json.toByteArray(Charsets.UTF_8)
+        require(bytes.size <= 8 * 1024 * 1024) { "ข้อมูลสำรองมีขนาดเกิน 8 MB" }
+        val path = "$organizationId/${java.time.Instant.now().toEpochMilli()}-${UUID.randomUUID()}.json"
+        client.storage.from("storeflow-backups").upload(path, bytes) {
+            contentType = io.ktor.http.ContentType.Application.Json
+        }
+        return try {
+            val insert = StoreBackupInsert(organizationId, backupType, path, bytes.size.toLong())
+            client.from("store_backups").insert(insert) { select() }.decodeSingle<StoreBackup>()
+        } catch (e: Exception) {
+            runCatching { client.storage.from("storeflow-backups").delete(path) }
+            throw e
+        }
+    }
+
+    suspend fun listStoreBackups(organizationId: String): List<StoreBackup> =
+        client.from("store_backups").select {
+            filter { eq("organization_id", organizationId) }
+            order("created_at", Order.DESCENDING)
+            limit(7)
+        }.decodeList()
+
+    suspend fun downloadCloudSnapshot(item: StoreBackup): String {
+        val bytes = client.storage.from("storeflow-backups").downloadAuthenticated(item.filePath)
+        require(bytes.size <= 8 * 1024 * 1024) { "ไฟล์สำรองมีขนาดเกิน 8 MB" }
+        return String(bytes, Charsets.UTF_8)
     }
 
     suspend fun downloadStoreQr(path: String): ByteArray =
