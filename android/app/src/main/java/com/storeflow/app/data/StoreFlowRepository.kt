@@ -419,7 +419,12 @@ class StoreFlowRepository(private val client: SupabaseClient) {
     }
 
     suspend fun signInWithGoogle() {
-        client.auth.signInWith(io.github.jan.supabase.auth.providers.Google)
+        // Explicit native callback: AndroidManifest + Supabase Auth URL allow-list must
+        // both contain storeflow://auth so OAuth returns to the installed app.
+        client.auth.signInWith(
+            io.github.jan.supabase.auth.providers.Google,
+            redirectUrl = "storeflow://auth"
+        )
     }
 
     suspend fun signOut() {
