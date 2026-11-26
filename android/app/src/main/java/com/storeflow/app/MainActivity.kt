@@ -306,6 +306,7 @@ private fun Workspace() {
     var role by remember { mutableStateOf("") }
     var products by remember { mutableStateOf(emptyList<StoreProduct>()) }
     var metrics by remember { mutableStateOf(StoreMetrics()) }
+    var subscription by remember { mutableStateOf<StoreSubscription?>(null) }
     var lastUpdated by remember { mutableStateOf("-") }
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var extraScreen by rememberSaveable { mutableStateOf("") }
@@ -333,6 +334,7 @@ private fun Workspace() {
         try {
             val list = withContext(Dispatchers.IO) { repo.products(active.id) }
             metrics = withContext(Dispatchers.IO) { repo.metrics(active.id, list) }
+            subscription = withContext(Dispatchers.IO) { repo.subscription(active.id) }
             products = list
             lastUpdated = java.time.LocalDateTime.now(ZoneId.of("Asia/Bangkok")).format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm"))
             error = null
@@ -453,8 +455,7 @@ private fun Workspace() {
                     client.auth.currentUserOrNull()?.email.orEmpty(), repo,
                     onSwitch = { store = null },
                     onSignOut = { scope.launch { repo.signOut() } })
-                "plans" -> StoreFlowPlansScreen(Modifier.padding(padding), active.id, repo,
-                    runCatching { repo.subscription(active.id) }.getOrNull(),
+                "plans" -> StoreFlowPlansScreen(Modifier.padding(padding), active.id, repo, subscription,
                     onSubscriptionChanged = { scope.launch { refresh() } })
                 else -> when (tab) {
                     0 -> Dashboard(Modifier.padding(padding), active.name, metrics, error, lastUpdated)
