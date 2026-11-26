@@ -313,6 +313,7 @@ private fun Workspace() {
     var loading by remember { mutableStateOf(true) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var showUpgradeDialog by remember { mutableStateOf(false) }
 
     suspend fun loadStores() {
         loading = true
@@ -374,6 +375,10 @@ private fun Workspace() {
         return
     }
     val active = store!!
+    val signedInEmail = client.auth.currentUserOrNull()?.email.orEmpty()
+    val permissions = remember(subscription, signedInEmail) {
+        PlanPermissions.from(subscription, signedInEmail)
+    }
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
@@ -392,7 +397,11 @@ private fun Workspace() {
                 NavigationDrawerItem(
                     label = { Text("เอกสาร") }, icon = { Icon(Icons.Default.Description, null) },
                     selected = extraScreen == "documents",
-                    onClick = { extraScreen = "documents"; scope.launch { drawerState.close() } }
+                    onClick = {
+                        if (permissions.hasFeature(StoreFeature.TAX_DOCUMENTS)) extraScreen = "documents"
+                        else showUpgradeDialog = true
+                        scope.launch { drawerState.close() }
+                    }
                 )
                 NavigationDrawerItem(
                     label = { Text("ตั้งค่าร้านและ QR") }, icon = { Icon(Icons.Default.Settings, null) },
@@ -402,6 +411,12 @@ private fun Workspace() {
                 NavigationDrawerItem(
                     label = { Text("แพ็กเกจ Basic / Standard / Premium / ซื้อขาด") },
                     icon = { Icon(Icons.Default.WorkspacePremium, null) },
+                    selected = extraScreen == "plans",
+                    onClick = { extraScreen = "plans"; scope.launch { drawerState.close() } }
+                )
+                if (permissions.isSuperAdmin) NavigationDrawerItem(
+                    label = { Text("จัดการอนุมัติแพ็กเกจลูกค้า (Super Admin)") },
+                    icon = { Icon(Icons.Default.AdminPanelSettings, null) },
                     selected = extraScreen == "plans",
                     onClick = { extraScreen = "plans"; scope.launch { drawerState.close() } }
                 )
@@ -448,24 +463,32 @@ private fun Workspace() {
         ) { padding ->
             when (extraScreen) {
                 "workforce" -> WorkforceScreen(Modifier.padding(padding), active.id, repo,
-                    role in listOf("owner", "admin", "hr"))
+                    role in listOf("owner", "admin", "hr"), permissions,
+                    onUpgrade = { extraScreen = "plans" })
                 "documents" -> DocumentsScreen(Modifier.padding(padding), active.id, DocumentsRepository(client))
                 "settings" -> SettingsScreen(Modifier.padding(padding), active, role,
-                    client.auth.currentUserOrNull()?.email.orEmpty(), repo,
+                    client.auth.currentUserOrNull()?.email.orEmpty(), repo, permissions,
+                    onUpgrade = { extraScreen = "plans" },
                     onSwitch = { store = null },
                     onSignOut = { scope.launch { repo.signOut() } })
                 "plans" -> StoreFlowPlansScreen(Modifier.padding(padding), active.id, repo, subscription,
                     onSubscriptionChanged = { scope.launch { refresh() } })
                 else -> when (tab) {
                     0 -> Dashboard(Modifier.padding(padding), active.name, metrics, error, lastUpdated)
-                    1 -> PosScreen(Modifier.padding(padding), active.id, products, repo, role,
+                    1 -> PosScreen(Modifier.padding(padding), active.id, products, repo, role, permissions,
+                        onUpgrade = { extraScreen = "plans" },
                         onOpenSettings = { extraScreen = "settings" }) { scope.launch { refresh() } }
                     2 -> ProductsScreen(Modifier.padding(padding), active.id, products, repo,
-                        role in listOf("owner", "admin", "manager")) { scope.launch { refresh() } }
+                        role in listOf("owner", "admin", "manager"), permissions,
+                        onUpgrade = { extraScreen = "plans" }) { scope.launch { refresh() } }
                     else -> ReportsScreen(Modifier.padding(padding), metrics, products)
                 }
             }
         }
+        if (showUpgradeDialog) StoreFlowUpgradeDialog(
+            onDismiss = { showUpgradeDialog = false },
+            onUpgrade = { showUpgradeDialog = false; extraScreen = "plans" }
+        )
     }
 }
 
