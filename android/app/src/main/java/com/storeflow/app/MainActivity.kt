@@ -1589,50 +1589,7 @@ private fun SettingsScreen(
     var deleteConfirm by remember { mutableStateOf(false) }
     var deleteConfirmationText by remember { mutableStateOf("") }
     var switchConfirm by remember { mutableStateOf(false) }
-    var backupJson by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
-    val exportBackupLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("application/json")
-    ) { uri ->
-        if (uri != null) scope.launch {
-            try {
-                val data = backupJson ?: error("ไม่มีข้อมูลสำรอง")
-                withContext(Dispatchers.IO) {
-                    context.contentResolver.openOutputStream(uri)?.use { it.write(data.toByteArray(Charsets.UTF_8)) }
-                        ?: error("บันทึกไฟล์ไม่สำเร็จ")
-                }
-                message = "ส่งออกข้อมูลสำรองเรียบร้อย"
-            } catch (e: Exception) { error = e.message ?: "ส่งออกข้อมูลไม่สำเร็จ" }
-        }
-    }
-    val importBackupLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri != null) scope.launch {
-            busy = true; error = null; message = null
-            try {
-                val data = withContext(Dispatchers.IO) {
-                    val input = context.contentResolver.openInputStream(uri)
-                        ?: error("อ่านไฟล์สำรองไม่สำเร็จ")
-                    input.use { stream ->
-                        val output = ByteArrayOutputStream()
-                        val buffer = ByteArray(8192)
-                        var total = 0
-                        while (true) {
-                            val count = stream.read(buffer)
-                            if (count < 0) break
-                            total += count
-                            require(total <= 8 * 1024 * 1024) { "ไฟล์สำรองต้องมีขนาดไม่เกิน 8 MB" }
-                            output.write(buffer, 0, count)
-                        }
-                        String(output.toByteArray(), Charsets.UTF_8)
-                    }
-                }
-                message = repo.importStoreBackup(store.id, data)
-            } catch (e: Exception) { error = e.message ?: "นำเข้าข้อมูลไม่สำเร็จ" }
-            finally { busy = false }
-        }
-    }
     val qrPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri: Uri? ->
         if (uri != null) scope.launch {
             busy = true; error = null
@@ -1829,27 +1786,7 @@ private fun SettingsScreen(
                 }
             }
         }
-        if (canManage) item {
-            Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("สำรองและกู้คืนข้อมูลร้าน", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text("ส่งออกข้อมูลร้านเป็น JSON หรือรวมข้อมูลจากไฟล์สำรองเข้าร้านนี้โดยไม่เขียนทับรายการเดิม ไฟล์สำรองมีข้อมูลลูกค้า พนักงาน เงินเดือน และเลขบัญชี ควรเก็บในที่ปลอดภัย")
-                    OutlinedButton(enabled = !busy, onClick = {
-                        scope.launch {
-                            busy = true; error = null
-                            try {
-                                backupJson = repo.exportStoreBackup(store.id)
-                                exportBackupLauncher.launch("StoreFlow-${store.id}-backup.json")
-                            } catch (e: Exception) { error = e.message ?: "สำรองข้อมูลไม่สำเร็จ" }
-                            finally { busy = false }
-                        }
-                    }, modifier = Modifier.fillMaxWidth()) { Text("ส่งออกข้อมูล JSON") }
-                    OutlinedButton(enabled = !busy, onClick = {
-                        importBackupLauncher.launch(arrayOf("application/json", "text/json"))
-                    }, modifier = Modifier.fillMaxWidth()) { Text("นำเข้าข้อมูล JSON") }
-                }
-            }
-        }
+        if (canManage) item { BackupCenterScreen(store, repo) }
         item {
             Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
