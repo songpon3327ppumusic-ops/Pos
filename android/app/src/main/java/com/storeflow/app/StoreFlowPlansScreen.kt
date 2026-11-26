@@ -34,13 +34,13 @@ private data class StoreFlowPlan(
 )
 
 private val storeFlowPlans = listOf(
-    StoreFlowPlan("free", "Free", 0, 0, "สูงสุด 20 รายการ", "เจ้าของร้าน 1 คน",
+    StoreFlowPlan("free", "Free", 0, 0, "สูงสุด 30 รายการ", "เจ้าของร้านเท่านั้น • พนักงาน 0 คน",
         "POS • QR พร้อมเพย์/รูป QR ร้าน • สแกนบาร์โค้ด • รายงานยอดขายรายวัน • ใบเสร็จรับเงินอย่างย่อ"),
-    StoreFlowPlan("basic", "Basic", 199, 1990, "สูงสุด 50 รายการ", "พนักงาน 1 คน",
+    StoreFlowPlan("basic", "Basic", 149, 1490, "สูงสุด 150 รายการ", "พนักงานสูงสุด 2 คน",
         "ทุกอย่างใน Free • ใบเสนอราคา • ใบส่งของ"),
-    StoreFlowPlan("standard", "Standard", 399, 3990, "สินค้าไม่จำกัด", "พนักงานสูงสุด 5 คน",
+    StoreFlowPlan("standard", "Standard", 299, 2990, "สินค้าไม่จำกัด", "พนักงานสูงสุด 6 คน",
         "ทุกอย่างใน Basic • ตารางกะงาน • ลงเวลา • ใบกำกับภาษีเต็มรูป"),
-    StoreFlowPlan("premium", "Premium", 799, 7990, "สินค้าไม่จำกัด", "พนักงานไม่จำกัด",
+    StoreFlowPlan("premium", "Premium", 599, 5990, "สินค้าไม่จำกัด", "พนักงานไม่จำกัด",
         "ทุกฟีเจอร์ • เงินเดือนอัตโนมัติ • 50 ทวิ • รับ-ส่งของ • ใบสำคัญรับ-จ่าย"),
     StoreFlowPlan("lifetime", "ซื้อขาด (Lifetime)", 2590, 2590, "สินค้าไม่จำกัด", "พนักงานไม่จำกัด",
         "จ่ายครั้งเดียว ฿2,590 (ราคาปกติ ฿3,990) • ปลดล็อกทุกฟีเจอร์ตลอดชีพ")
@@ -225,7 +225,7 @@ fun StoreFlowPlansScreen(
             Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
                 Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("เริ่มใช้งานแพ็กเกจ Free", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text("ฟรีตลอดชีพ • สินค้า 20 รายการ • เจ้าของร้านใช้งานคนเดียว • QR รับเงินและ POS ใช้งานได้")
+                    Text("ฟรีตลอดชีพ • สินค้า 30 รายการ • เจ้าของร้านใช้งานคนเดียว • QR รับเงินและ POS ใช้งานได้")
                     Button(
                         enabled = !busy && currentTier !in setOf("free", "lifetime"),
                         onClick = {
