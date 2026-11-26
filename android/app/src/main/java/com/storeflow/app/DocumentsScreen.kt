@@ -49,7 +49,7 @@ private fun documentTitle(type: String): String = when (type) {
 }
 
 @Composable
-fun DocumentsScreen(modifier: Modifier, organizationId: String, repository: DocumentsRepository) {
+fun DocumentsScreen(modifier: Modifier, organizationId: String, repository: DocumentsRepository, readOnly: Boolean = false) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var documents by remember { mutableStateOf(emptyList<BusinessDocument>()) }
@@ -91,11 +91,12 @@ fun DocumentsScreen(modifier: Modifier, organizationId: String, repository: Docu
                 Text("เอกสารร้านค้า", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                 Text("บันทึกเอกสารจริงในฐานข้อมูลร้านค้า", style = MaterialTheme.typography.bodySmall)
             }
-            Button(onClick = { creating = true }) { Icon(Icons.Default.Add, null); Text("สร้าง") }
+            if (!readOnly) Button(onClick = { creating = true }) { Icon(Icons.Default.Add, null); Text("สร้าง") }
         }
         Spacer(Modifier.height(12.dp))
         if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        if (readOnly) Text("โหมดดูประวัติเท่านั้น • ต่ออายุแพ็กเกจเพื่อสร้างหรือแก้ไขเอกสาร", color = MaterialTheme.colorScheme.error)
         if (!loading && documents.isEmpty()) Text("ยังไม่มีเอกสาร", modifier = Modifier.padding(20.dp))
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(documents, key = { it.id }) { doc ->
@@ -112,7 +113,7 @@ fun DocumentsScreen(modifier: Modifier, organizationId: String, repository: Docu
             }
         }
     }
-    if (creating) DocumentForm(
+    if (creating && !readOnly) DocumentForm(
         onDismiss = { creating = false },
         onSave = { type, party, taxId, address, due, description, qty, price, mode, notes, income, whRate ->
             scope.launch {
@@ -133,7 +134,7 @@ fun DocumentsScreen(modifier: Modifier, organizationId: String, repository: Docu
             text = { Text("เลขที่: " + doc.documentNo + "\nลูกค้า: " + (doc.partyName ?: "-") + "\nวันที่: " + doc.issueDate + "\nยอดรวม: " + documentCurrency.format(doc.total) + "\nสถานะ: " + doc.status) },
             confirmButton = {
                 Row {
-                    if (doc.documentType == "quotation") {
+                    if (!readOnly && doc.documentType == "quotation") {
                         TextButton(onClick = {
                             scope.launch {
                                 try {
