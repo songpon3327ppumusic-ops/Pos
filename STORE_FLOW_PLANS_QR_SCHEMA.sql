@@ -112,15 +112,16 @@ CREATE POLICY storeflow_plan_payment_requests_owner_insert ON public.storeflow_p
  FOR INSERT TO authenticated WITH CHECK(requested_by=auth.uid() AND status='pending_payment' AND EXISTS(
   SELECT 1 FROM public.organization_members m WHERE m.organization_id=storeflow_plan_payment_requests.organization_id
    AND m.user_id=auth.uid() AND m.is_active AND m.membership_status='active' AND m.role IN ('owner','admin')));
+CREATE OR REPLACE FUNCTION public.storeflow_is_platform_admin()
+RETURNS boolean LANGUAGE sql STABLE SECURITY INVOKER SET search_path=''
+AS $ SELECT coalesce(auth.jwt()->'app_metadata'->>'role','')='platform_admin'; $;
+REVOKE ALL ON FUNCTION public.storeflow_is_platform_admin() FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION public.storeflow_is_platform_admin() TO authenticated;
+
 DROP POLICY IF EXISTS storeflow_plan_payment_requests_platform_admin_read ON public.storeflow_plan_payment_requests;
 CREATE POLICY storeflow_plan_payment_requests_platform_admin_read ON public.storeflow_plan_payment_requests
  FOR SELECT TO authenticated USING(public.storeflow_is_platform_admin());
 
-CREATE OR REPLACE FUNCTION public.storeflow_is_platform_admin()
-RETURNS boolean LANGUAGE sql STABLE SECURITY INVOKER SET search_path=''
-AS $$ SELECT coalesce(auth.jwt()->'app_metadata'->>'role','')='platform_admin'; $$;
-REVOKE ALL ON FUNCTION public.storeflow_is_platform_admin() FROM PUBLIC,anon;
-GRANT EXECUTE ON FUNCTION public.storeflow_is_platform_admin() TO authenticated;
 
 CREATE OR REPLACE FUNCTION private.has_active_store_license(p_org uuid)
 RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path=''
