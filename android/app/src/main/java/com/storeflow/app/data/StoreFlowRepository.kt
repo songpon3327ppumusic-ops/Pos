@@ -719,11 +719,16 @@ class StoreFlowRepository(private val client: SupabaseClient) {
         client.postgrest.rpc("adjust_stock", params)
     }
 
-    suspend fun reportSales(organizationId: String, fromInclusive: String): List<StoreSaleSummary> =
+    suspend fun reportSales(
+        organizationId: String,
+        fromInclusive: String,
+        untilExclusive: String
+    ): List<StoreSaleSummary> =
         client.from("sales").select {
             filter {
                 eq("organization_id", organizationId)
                 gte("created_at", fromInclusive)
+                lt("created_at", untilExclusive)
                 eq("status", "completed")
             }
             order("created_at", Order.DESCENDING)
