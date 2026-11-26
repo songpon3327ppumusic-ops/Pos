@@ -84,7 +84,8 @@ data class ProductArchiveUpdate(@SerialName("is_active") val isActive: Boolean =
 @Serializable
 data class StoreSaleSummary(
     val total: Double,
-    @SerialName("created_at") val createdAt: String
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("payment_method") val paymentMethod: String? = null
 )
 
 data class StoreMetrics(
@@ -717,6 +718,17 @@ class StoreFlowRepository(private val client: SupabaseClient) {
         }
         client.postgrest.rpc("adjust_stock", params)
     }
+
+    suspend fun reportSales(organizationId: String, fromInclusive: String): List<StoreSaleSummary> =
+        client.from("sales").select {
+            filter {
+                eq("organization_id", organizationId)
+                gte("created_at", fromInclusive)
+                eq("status", "completed")
+            }
+            order("created_at", Order.DESCENDING)
+            limit(5000)
+        }.decodeList()
 
     suspend fun metrics(organizationId: String, productList: List<StoreProduct>): StoreMetrics {
         val start = LocalDate.now(ZoneId.of("Asia/Bangkok"))
