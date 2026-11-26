@@ -6,7 +6,7 @@ import java.time.OffsetDateTime
 
 enum class StoreFeature {
     OVERVIEW, POS, PRODUCTS, BASIC_SALES_REPORTS, STAFF,
-    SHIFTS, ATTENDANCE, STORE_PAYMENT_QR, PAYROLL_AUTO,
+    SHIFTS, ATTENDANCE, STORE_PAYMENT_QR, BUSINESS_DOCUMENTS, PAYROLL_AUTO,
     TAX_DOCUMENTS, BARCODE_SCANNER, RECEIPT_PRINTER
 }
 
@@ -125,7 +125,7 @@ data class PlanPermissions(
             StoreFeature.OVERVIEW, StoreFeature.POS, StoreFeature.PRODUCTS,
             StoreFeature.BASIC_SALES_REPORTS, StoreFeature.STAFF -> true
             StoreFeature.SHIFTS, StoreFeature.ATTENDANCE,
-            StoreFeature.STORE_PAYMENT_QR -> effectiveTier == PlanTier.STANDARD
+            StoreFeature.STORE_PAYMENT_QR, StoreFeature.BUSINESS_DOCUMENTS -> effectiveTier == PlanTier.STANDARD
             StoreFeature.PAYROLL_AUTO, StoreFeature.TAX_DOCUMENTS,
             StoreFeature.BARCODE_SCANNER, StoreFeature.RECEIPT_PRINTER -> false
         }
