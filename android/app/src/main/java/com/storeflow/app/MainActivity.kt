@@ -1349,7 +1349,8 @@ private fun WorkforceScreen(
         )
     }
     if (showUpgradeDialog) StoreFlowUpgradeDialog(
-        onDismiss = { showUpgradeDialog = false }, onUpgrade = onUpgrade
+        onDismiss = { showUpgradeDialog = false }, onUpgrade = onUpgrade,
+        message = "จำนวนพนักงานเต็มตามแพ็กเกจ ${permissions.effectiveTier.value.uppercase()} แล้ว (สูงสุด ${permissions.employeeLimit() ?: "ไม่จำกัด"} คน) กรุณาอัปเกรดเพื่อเพิ่มพนักงาน"
     )
 }
 
