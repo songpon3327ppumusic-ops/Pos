@@ -18,6 +18,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -42,14 +43,22 @@ import java.util.Locale
 private val documentCurrency = NumberFormat.getCurrencyInstance(Locale("th", "TH"))
 private fun documentTitle(type: String): String = when (type) {
     "quotation" -> "ใบเสนอราคา"; "invoice", "billing_note" -> "ใบแจ้งหนี้ / ใบวางบิล"
-    "receipt" -> "ใบเสร็จรับเงิน"; "tax_invoice" -> "ใบกำกับภาษี"
+    "receipt" -> "ใบเสร็จรับเงินอย่างย่อ"; "tax_invoice" -> "ใบกำกับภาษีเต็มรูป"
     "abbreviated_tax_invoice" -> "ใบกำกับภาษีอย่างย่อ"; "delivery_note" -> "ใบส่งของ"
     "goods_receipt" -> "ใบรับสินค้า"; "withholding_certificate" -> "หนังสือรับรองหัก ณ ที่จ่าย (50 ทวิ)"
+    "receipt_voucher" -> "ใบสำคัญรับเงิน"; "payment_voucher" -> "ใบสำคัญจ่าย"
     else -> type
 }
 
 @Composable
-fun DocumentsScreen(modifier: Modifier, organizationId: String, repository: DocumentsRepository, readOnly: Boolean = false, allowTaxDocuments: Boolean = true) {
+fun DocumentsScreen(
+    modifier: Modifier,
+    organizationId: String,
+    repository: DocumentsRepository,
+    readOnly: Boolean = false,
+    permissions: PlanPermissions,
+    onUpgrade: () -> Unit
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var documents by remember { mutableStateOf(emptyList<BusinessDocument>()) }
@@ -114,7 +123,8 @@ fun DocumentsScreen(modifier: Modifier, organizationId: String, repository: Docu
         }
     }
     if (creating && !readOnly) DocumentForm(
-        allowTaxDocuments = allowTaxDocuments,
+        permissions = permissions,
+        onUpgrade = onUpgrade,
         onDismiss = { creating = false },
         onSave = { type, party, taxId, address, due, description, qty, price, mode, notes, income, whRate ->
             scope.launch {
@@ -165,7 +175,8 @@ fun DocumentsScreen(modifier: Modifier, organizationId: String, repository: Docu
 
 @Composable
 private fun DocumentForm(
-    allowTaxDocuments: Boolean,
+    permissions: PlanPermissions,
+    onUpgrade: () -> Unit,
     onDismiss: () -> Unit,
     onSave: (String,String,String,String,String?,String,Double,Double,String,String,String,Double) -> Unit
 ) {
@@ -176,14 +187,37 @@ private fun DocumentForm(
     var price by remember { mutableStateOf("0") }; var mode by remember { mutableStateOf("exclude") }
     var notes by remember { mutableStateOf("") }; var income by remember { mutableStateOf("ค่าบริการ") }
     var whRate by remember { mutableStateOf("3") }; var error by remember { mutableStateOf<String?>(null) }
-    val allTypes = listOf("tax_invoice","abbreviated_tax_invoice","quotation","invoice","billing_note","delivery_note","goods_receipt","withholding_certificate")
-    val types = if (allowTaxDocuments) allTypes else allTypes.filterNot { it in setOf("tax_invoice","withholding_certificate") }
+    val types = listOf(
+        "abbreviated_tax_invoice", "tax_invoice", "withholding_certificate",
+        "quotation", "invoice", "delivery_note", "goods_receipt",
+        "receipt_voucher", "payment_voucher", "receipt"
+    )
     AlertDialog(
         onDismissRequest = onDismiss, title = { Text("สร้างเอกสาร") },
         text = {
             Column(Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                 types.forEach { t ->
-                    Row(verticalAlignment = Alignment.CenterVertically) { RadioButton(type == t, onClick = { type = t }); Text(documentTitle(t)) }
+                    val allowed = permissions.canCreateDocument(t)
+                    Row(
+                        modifier = Modifier.fillMaxWidth().clickable {
+                            if (allowed) type = t else onUpgrade()
+                        },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = type == t,
+                            onClick = { if (allowed) type = t else onUpgrade() },
+                            enabled = allowed
+                        )
+                        Text(
+                            documentTitle(t),
+                            modifier = Modifier.weight(1f),
+                            color = if (allowed) MaterialTheme.colorScheme.onSurface
+                                else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        if (!allowed) Icon(Icons.Default.Lock, contentDescription = "ต้องอัปเกรดแพ็กเกจ",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
                 OutlinedTextField(party, { party = it }, label = { Text("ชื่อลูกค้า / คู่ค้า") }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(taxId, { taxId = it.filter(Char::isDigit).take(13) }, label = { Text("เลขผู้เสียภาษี 13 หลัก") }, modifier = Modifier.fillMaxWidth())
@@ -206,7 +240,8 @@ private fun DocumentForm(
         },
         confirmButton = { TextButton(onClick = {
             val q = qty.toDoubleOrNull(); val p = price.toDoubleOrNull(); val w = whRate.toDoubleOrNull() ?: 0.0
-            if (party.isBlank() || q == null || p == null || q <= 0 || p < 0 || description.isBlank()) error = "กรุณาตรวจสอบชื่อ รายการ จำนวน และราคา"
+            if (!permissions.canCreateDocument(type)) error = "เอกสารนี้ต้องใช้แพ็กเกจที่สูงขึ้น"
+            else if (party.isBlank() || q == null || p == null || q <= 0 || p < 0 || description.isBlank()) error = "กรุณาตรวจสอบชื่อ รายการ จำนวน และราคา"
             else if (taxId.isNotBlank() && taxId.length != 13) error = "เลขผู้เสียภาษีต้องมี 13 หลัก"
             else if (w !in 0.0..100.0) error = "อัตราหักภาษีไม่ถูกต้อง"
             else onSave(type, party, taxId, address, due.ifBlank { null }, description, q, p, mode, notes, income, w)
