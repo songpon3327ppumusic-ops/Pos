@@ -44,8 +44,8 @@ data class PlanPermissions(
         const val SUPER_ADMIN_EMAIL = "songponsonma.3340@gmail.com"
 
         fun parseInstant(value: String?): Instant? = value?.let {
-            runCatching { Instant.parse(it) }
-                .recoverCatching { OffsetDateTime.parse(it).toInstant() }
+            runCatching { Instant.parse(value) }
+                .recoverCatching { OffsetDateTime.parse(value).toInstant() }
                 .getOrNull()
         }
 
